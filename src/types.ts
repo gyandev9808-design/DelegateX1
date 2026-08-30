@@ -7,6 +7,24 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  title?: string;
+  country?: string;
+  committee?: string;
+  avatarColor?: string;
+  createdAt?: number;
+}
+
+export interface AuthResponse {
+  message: string;
+  token: string;
+  user: User;
+}
+
+export interface PasswordResetRecord {
+  token: string;
+  email: string;
+  expiresAt: number;
+  used: boolean;
 }
 
 export interface MeetingRoom {

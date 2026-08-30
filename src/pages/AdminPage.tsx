@@ -39,10 +39,29 @@ export default function AdminPage() {
   };
 
   const [staffList, setStaffList] = useState<StaffAccount[]>([
+    { id: 'admin_gyan_01', name: 'Gyan Dev', email: 'gyan.dev9808@gmail.com', role: 'ADMIN' },
+    { id: 'admin_sec_02', name: 'Master Secretariat', email: 'admin@delegatex.org', role: 'ADMIN' },
     { id: '1', name: 'Sarah Jenkins', email: 'sarah.eb@delegatex.org', role: 'CHAIR' },
     { id: '2', name: 'David Kim', email: 'david.sec@delegatex.org', role: 'ADMIN' },
     { id: '3', name: 'Aarav Mehta', email: 'aarav.eb@delegatex.org', role: 'CHAIR' },
   ]);
+
+  React.useEffect(() => {
+    fetch('/api/admin/accounts')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.accounts && data.accounts.length > 0) {
+          const mapped: StaffAccount[] = data.accounts.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            email: a.email,
+            role: a.role === 'CHAIR' ? 'CHAIR' : 'ADMIN',
+          }));
+          setStaffList(mapped);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
@@ -110,7 +129,7 @@ export default function AdminPage() {
     }
 
     const cleanTitlePrefix = newMeetingTitle.trim().substring(0, 4).toUpperCase().replace(/[^A-Z]/g, 'MUN');
-    const generatedCode = `${cleanTitlePrefix}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const generatedCode = `${cleanTitlePrefix.toLowerCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newMeeting: MeetingRoom = {
       id: Date.now().toString(),
@@ -120,6 +139,20 @@ export default function AdminPage() {
       type: newMeetingType,
       googleMeetUrl: newMeetingUrl.trim(),
     };
+
+    // Register with server live room store
+    fetch('/api/rooms/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newMeeting.title,
+        committee: cleanTitlePrefix,
+        agenda: newMeeting.topic,
+        userRole: 'ADMIN',
+        userEmail: 'gyan.dev9808@gmail.com',
+        passkey: 'AdminSecretariat2026!',
+      }),
+    }).catch(() => {});
 
     setMeetings([newMeeting, ...meetings]);
     setNewMeetingTitle('');

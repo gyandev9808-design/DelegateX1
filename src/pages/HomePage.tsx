@@ -28,6 +28,15 @@ export default function HomePage() {
   const [isPlayingRehearsal, setIsPlayingRehearsal] = useState(false);
   const [rehearsalTime, setRehearsalTime] = useState(0);
 
+  const userRole = localStorage.getItem('mun_user_role') || 'DELEGATE';
+  const userEmail = localStorage.getItem('mun_user_email') || '';
+  const isAdmin =
+    userRole === 'ADMIN' ||
+    userRole === 'MASTER_ADMIN' ||
+    userRole === 'CHAIR' ||
+    userEmail.toLowerCase() === 'gyan.dev9808@gmail.com' ||
+    userEmail.toLowerCase().includes('admin');
+
   const features = [
     [Video, 'Live Video Meet', 'Google Meet style real-time sessions with camera, audio, screen share, and synchronized floor timers.'],
     [BookOpen, 'RoP Academy', 'Master THIMUN, UN4MUN, and North American parliamentary procedures with structured interactive modules.'],
@@ -91,7 +100,7 @@ export default function HomePage() {
                 className="flex items-center gap-2 rounded-full bg-cyan-300 px-7 py-3.5 text-sm font-bold text-slate-950 shadow-xl shadow-cyan-500/25 transition hover:bg-cyan-200 hover:scale-105 active:scale-95"
               >
                 <Video className="h-4 w-4" />
-                <span>Start Live Meet</span>
+                <span>{isAdmin ? 'Host Live Meet' : 'Join Live Meet'}</span>
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link

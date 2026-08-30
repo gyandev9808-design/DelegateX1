@@ -20,6 +20,14 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [roomCode, setRoomCode] = useState('');
   const [focusItems, setFocusItems] = useState([true, false, false]);
+  const userRole = localStorage.getItem('mun_user_role') || 'DELEGATE';
+  const userEmail = localStorage.getItem('mun_user_email') || '';
+  const isAdmin =
+    userRole === 'ADMIN' ||
+    userRole === 'MASTER_ADMIN' ||
+    userRole === 'CHAIR' ||
+    userEmail.toLowerCase() === 'gyan.dev9808@gmail.com' ||
+    userEmail.toLowerCase().includes('admin');
 
   const toggleFocus = (index: number) => {
     setFocusItems((prev) => {
@@ -67,7 +75,7 @@ export default function DashboardPage() {
               className="flex items-center gap-2 rounded-full bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-200 hover:scale-105"
             >
               <Video className="h-4 w-4" />
-              <span>Live Video Meet</span>
+              <span>{isAdmin ? 'Host Live Meet' : 'Join Committee Meet'}</span>
             </Link>
             <button
               onClick={() => navigate('/training')}
