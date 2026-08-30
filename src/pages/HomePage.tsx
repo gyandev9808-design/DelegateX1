@@ -17,6 +17,10 @@ import {
   CheckCircle2,
   Shield,
   Layers,
+  UserPlus,
+  HelpCircle,
+  Video,
+  Radio,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -25,31 +29,31 @@ export default function HomePage() {
   const [rehearsalTime, setRehearsalTime] = useState(0);
 
   const features = [
+    [Video, 'Live Video Meet', 'Google Meet style real-time sessions with camera, audio, screen share, and synchronized floor timers.'],
     [BookOpen, 'RoP Academy', 'Master THIMUN, UN4MUN, and North American parliamentary procedures with structured interactive modules.'],
     [Mic2, 'GSL & Caucus Clock', 'Real-time speaker timers, placard raising simulations, and queue management for seamless debate control.'],
     [Bot, 'AI Doubt Clarifier', 'Instant diplomatic answers on foreign policy stances, drafting operative clauses, and raising points.'],
-    [Users, 'Secretariat Workspace', 'Comprehensive control for Executive Boards: generate Google Meet sessions, assign rosters, and chair rooms.'],
-    [Award, 'Delegate Command Center', 'Track syllabus mastery, research progress, and daily diplomatic focus items with dynamic rank scoring.'],
-    [Landmark, 'Live Simulations', 'Engage in active UNSC, UNHRC, and DISEC committee simulations with synchronized delegate rosters.'],
+    [Users, 'Secretariat Workspace', 'Comprehensive control for Executive Boards: assign country rosters, manage Google Meet sessions, and chair rooms.'],
+    [Award, 'Delegate Command Center', 'Track syllabus mastery, research progress, and daily diplomatic focus items with structured study milestones.'],
   ];
 
   const workflowSteps = [
     {
       num: '01',
-      title: 'Choose your committee',
-      desc: 'Pick your conference, committee agenda, allocated country, and diplomatic objectives.',
-      icon: Landmark,
+      title: 'Register as a Delegate',
+      desc: 'Sign up with your details. Note that countries are not chosen upfront—they are assigned directly by the Secretariat Admin to ensure balanced committee matrices.',
+      icon: UserPlus,
     },
     {
       num: '02',
-      title: 'Build your position',
-      desc: 'Turn reliable UN treaties and policy briefs into a razor-sharp, defensible working paper.',
-      icon: BookOpen,
+      title: 'Admin Country & Committee Allocation',
+      desc: 'The Secretariat reviews registered delegates and assigns your official country portfolio, committee room, and agenda dossier from the Admin Portal.',
+      icon: Shield,
     },
     {
       num: '03',
-      title: 'Practise the floor',
-      desc: 'Rehearse your 90-second GSL speech, master caucusing, and enter live simulations.',
+      title: 'Prepare, Rehearse & Command the Floor',
+      desc: 'Access your assigned policy research, master Rules of Procedure, rehearse your 90-second GSL speech, and enter live committee floor sessions.',
       icon: Mic2,
     },
   ];
@@ -77,25 +81,33 @@ export default function HomePage() {
 
             <p className="mx-auto mt-6 max-w-2xl text-base text-slate-400 sm:text-lg leading-relaxed">
               DelegateX is the all-in-one platform for Model United Nations delegates, chairs, and secretariats.
-              Master Rules of Procedure, sharpen opening speeches, and run live interactive simulations.
+              Master Rules of Procedure, receive admin-allocated country portfolios, and run live interactive floor simulations.
             </p>
 
-            {/* CTA buttons */}
+            {/* CTA buttons: Register Now, Start Live Meet, and How Does It Work */}
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
               <Link
-                to="/dashboard"
+                to="/meet"
                 className="flex items-center gap-2 rounded-full bg-cyan-300 px-7 py-3.5 text-sm font-bold text-slate-950 shadow-xl shadow-cyan-500/25 transition hover:bg-cyan-200 hover:scale-105 active:scale-95"
               >
-                <span>Enter Delegate Dashboard</span>
+                <Video className="h-4 w-4" />
+                <span>Start Live Meet</span>
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
-                to="/committee"
-                className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-7 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/10 hover:border-cyan-400/40"
+                to="/auth?mode=register"
+                className="flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-7 py-3.5 text-sm font-semibold text-cyan-300 backdrop-blur-sm transition hover:bg-cyan-400/20"
               >
-                <Mic2 className="h-4 w-4 text-cyan-300" />
-                <span>Launch Live Committee</span>
+                <UserPlus className="h-4 w-4" />
+                <span>Register Now</span>
               </Link>
+              <a
+                href="#how-it-works"
+                className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/10 hover:border-cyan-400/40"
+              >
+                <HelpCircle className="h-4 w-4 text-slate-400" />
+                <span>How It Works</span>
+              </a>
             </div>
 
             {/* Interactive Hero Preview Card */}
@@ -108,22 +120,28 @@ export default function HomePage() {
                     </div>
                     <div>
                       <h3 className="font-bold text-white text-sm sm:text-base">UN Security Council (UNSC)</h3>
-                      <p className="text-xs text-slate-400">Arctic Sovereignty & Environmental Security · Session 04</p>
+                      <p className="text-xs text-slate-400">Arctic Sovereignty & Environmental Security · Committee Matrix</p>
                     </div>
                   </div>
-                  <span className="rounded-full bg-emerald-400/15 border border-emerald-400/30 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
-                    Brief Ready
+                  <span className="rounded-full bg-cyan-400/15 border border-cyan-400/30 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                    <Shield className="h-3 w-3" />
+                    Country Assigned by Admin
                   </span>
                 </div>
 
                 <div className="grid gap-5 md:grid-cols-[1.2fr_0.8fr]">
                   {/* Country brief */}
                   <div className="rounded-xl border border-white/10 bg-slate-950/70 p-5 space-y-4">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300">
-                      Country Brief · French Republic
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300">
+                        Admin Portfolio Allocation
+                      </p>
+                      <span className="text-[10px] text-slate-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                        Secretariat Approved
+                      </span>
+                    </div>
                     <h4 className="text-base font-bold text-white leading-snug">
-                      Protection of critical maritime infrastructure & scientific navigation in polar corridors
+                      Delegation Country & Dossier assigned by Secretariat after registration approval
                     </h4>
                     
                     <div className="space-y-2 pt-2">
@@ -234,18 +252,18 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 3-STEP WORKFLOW */}
-        <section id="workflow" className="border-y border-white/10 bg-slate-900/30 px-5 py-24 sm:px-8">
+        {/* 3-STEP WORKFLOW - HOW IT WORKS */}
+        <section id="how-it-works" className="border-y border-white/10 bg-slate-900/30 px-5 py-24 sm:px-8">
           <div className="mx-auto max-w-6xl">
             <div className="mb-16 text-center">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300 mb-2">
-                The Preparation Loop
+                How It Works
               </p>
               <h2 className="text-3xl font-bold text-white sm:text-4xl">
-                From Blank Page to Best Delegate.
+                From Registration to Resolution.
               </h2>
-              <p className="mt-3 text-slate-400 text-sm">
-                A structured three-step methodology developed by award-winning MUN veterans.
+              <p className="mt-3 text-slate-400 text-sm max-w-xl mx-auto">
+                A seamless pipeline designed for conferences: delegates register, secretariats assign country allocations, and committees debate with live floor tools.
               </p>
             </div>
 
@@ -266,6 +284,18 @@ export default function HomePage() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Quick Register CTA banner */}
+            <div className="mt-12 text-center">
+              <Link
+                to="/auth?mode=register"
+                className="inline-flex items-center gap-2 rounded-full bg-cyan-300 px-8 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-200 hover:scale-105"
+              >
+                <UserPlus className="h-4 w-4" />
+                <span>Register Now as a Delegate</span>
+                <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
           </div>
         </section>
@@ -302,17 +332,23 @@ export default function HomePage() {
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <Link
+                to="/auth?mode=register"
+                className="rounded-full bg-cyan-300 px-6 py-3 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"
+              >
+                Register Now
+              </Link>
+              <Link
                 to="/training"
-                className="rounded-full bg-cyan-300 px-6 py-3 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition"
+                className="rounded-full border border-white/20 bg-white/5 px-6 py-3 text-xs font-semibold text-white hover:bg-white/10 transition"
               >
                 Explore Training Modules
               </Link>
-              <Link
-                to="/ai-doubt-clarifier"
-                className="rounded-full border border-white/20 bg-white/5 px-6 py-3 text-xs font-semibold text-white hover:bg-white/10 transition"
+              <a
+                href="#how-it-works"
+                className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-6 py-3 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/20 transition"
               >
-                Ask AI Doubt Clarifier
-              </Link>
+                How It Works
+              </a>
             </div>
           </div>
         </section>

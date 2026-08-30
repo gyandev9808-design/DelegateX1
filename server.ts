@@ -125,6 +125,312 @@ app.post('/api/register', (req, res) => {
   }
 });
 
+// In-Memory Live Session Store for Google Meet style sessions
+interface Participant {
+  id: string;
+  name: string;
+  country?: string;
+  role: 'CHAIR' | 'DELEGATE' | 'SECRETARY' | 'GUEST';
+  avatarColor: string;
+  isMuted: boolean;
+  isVideoOn: boolean;
+  isHandRaised: boolean;
+  isSpeaking?: boolean;
+  joinedAt: number;
+}
+
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole?: string;
+  senderCountry?: string;
+  text: string;
+  timestamp: string;
+  isSystem?: boolean;
+}
+
+interface RoomState {
+  id: string;
+  title: string;
+  committee: string;
+  agenda: string;
+  createdAt: number;
+  hostId: string;
+  speakersQueue: string[];
+  currentSpeakerIndex: number;
+  speechDuration: number;
+  timeLeft: number;
+  isTimerRunning: boolean;
+  participants: Participant[];
+  messages: ChatMessage[];
+}
+
+const liveRooms = new Map<string, RoomState>();
+
+// Helper to generate Google Meet style code (e.g. abc-defg-hij)
+function generateMeetCode(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz';
+  const segment = (len: number) =>
+    Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `${segment(3)}-${segment(4)}-${segment(3)}`;
+}
+
+// Create New Live Meeting Room
+app.post('/api/rooms/create', (req, res) => {
+  try {
+    const { title, committee, agenda, hostName, hostRole, hostCountry } = req.body;
+    const roomId = generateMeetCode();
+    const hostId = 'user_' + Math.random().toString(36).substring(2, 9);
+
+    const newRoom: RoomState = {
+      id: roomId,
+      title: title?.trim() || 'UN Security Council Live Session',
+      committee: committee?.trim() || 'UNSC',
+      agenda: agenda?.trim() || 'Multilateral Security & Peacekeeping Protocols',
+      createdAt: Date.now(),
+      hostId,
+      speakersQueue: [
+        'President of the Council (Chair)',
+      ],
+      currentSpeakerIndex: 0,
+      speechDuration: 90,
+      timeLeft: 90,
+      isTimerRunning: false,
+      participants: [
+        {
+          id: hostId,
+          name: hostName?.trim() || 'Conference Host',
+          country: hostCountry?.trim() || 'Dais / President',
+          role: hostRole === 'DELEGATE' ? 'DELEGATE' : 'CHAIR',
+          avatarColor: 'bg-cyan-500',
+          isMuted: false,
+          isVideoOn: true,
+          isHandRaised: false,
+          isSpeaking: false,
+          joinedAt: Date.now(),
+        },
+      ],
+      messages: [
+        {
+          id: 'msg_welcome_' + Date.now(),
+          senderId: 'system',
+          senderName: 'DelegateX Floor System',
+          text: `Welcome to the live session. Committee Room: ${roomId}. Rules of Procedure are in effect.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isSystem: true,
+        },
+      ],
+    };
+
+    liveRooms.set(roomId, newRoom);
+    return res.status(201).json({ roomId, room: newRoom, hostId });
+  } catch (error) {
+    console.error('Create room error:', error);
+    return res.status(500).json({ error: 'Failed to initialize live meeting' });
+  }
+});
+
+// Get or Ensure Meeting Room Exists
+app.get('/api/rooms/:roomId', (req, res) => {
+  const { roomId } = req.params;
+  const cleanId = roomId.toLowerCase().trim();
+
+  let room = liveRooms.get(cleanId);
+  if (!room) {
+    // Automatically instantiate room if joining via direct code
+    room = {
+      id: cleanId,
+      title: 'Live Committee Session Floor',
+      committee: 'General Assembly / UNSC',
+      agenda: 'General Debate & Draft Resolutions',
+      createdAt: Date.now(),
+      hostId: 'system_host',
+      speakersQueue: ['President of the General Assembly'],
+      currentSpeakerIndex: 0,
+      speechDuration: 90,
+      timeLeft: 90,
+      isTimerRunning: false,
+      participants: [],
+      messages: [
+        {
+          id: 'msg_init_' + Date.now(),
+          senderId: 'system',
+          senderName: 'DelegateX Meeting Control',
+          text: `Live room ${cleanId} initialized. Floor is open for roll call and GSL motions.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isSystem: true,
+        },
+      ],
+    };
+    liveRooms.set(cleanId, room);
+  }
+
+  return res.json({ room });
+});
+
+// Join Meeting Room
+app.post('/api/rooms/:roomId/join', (req, res) => {
+  const { roomId } = req.params;
+  const { id, name, country, role, isMuted, isVideoOn } = req.body;
+  const cleanId = roomId.toLowerCase().trim();
+
+  let room = liveRooms.get(cleanId);
+  if (!room) {
+    room = {
+      id: cleanId,
+      title: 'Live Committee Session Floor',
+      committee: 'General Assembly / UNSC',
+      agenda: 'General Debate & Resolutions',
+      createdAt: Date.now(),
+      hostId: id || 'user_host',
+      speakersQueue: [],
+      currentSpeakerIndex: 0,
+      speechDuration: 90,
+      timeLeft: 90,
+      isTimerRunning: false,
+      participants: [],
+      messages: [],
+    };
+    liveRooms.set(cleanId, room);
+  }
+
+  const userId = id || 'usr_' + Math.random().toString(36).substring(2, 9);
+  const colors = ['bg-cyan-500', 'bg-blue-600', 'bg-emerald-600', 'bg-amber-600', 'bg-purple-600', 'bg-rose-600', 'bg-teal-600'];
+  const avatarColor = colors[Math.floor(Math.random() * colors.length)];
+
+  const existingIndex = room.participants.findIndex((p) => p.id === userId);
+  const participantData: Participant = {
+    id: userId,
+    name: name?.trim() || 'Delegate',
+    country: country?.trim() || (role === 'CHAIR' ? 'Executive Board' : 'Observer Delegation'),
+    role: role || 'DELEGATE',
+    avatarColor: existingIndex >= 0 ? room.participants[existingIndex].avatarColor : avatarColor,
+    isMuted: isMuted ?? false,
+    isVideoOn: isVideoOn ?? true,
+    isHandRaised: false,
+    isSpeaking: false,
+    joinedAt: Date.now(),
+  };
+
+  if (existingIndex >= 0) {
+    room.participants[existingIndex] = { ...room.participants[existingIndex], ...participantData };
+  } else {
+    room.participants.push(participantData);
+    room.messages.push({
+      id: 'msg_join_' + Date.now(),
+      senderId: 'system',
+      senderName: 'Session Protocol',
+      text: `${participantData.name} (${participantData.country}) has joined the live floor.`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isSystem: true,
+    });
+  }
+
+  return res.json({ success: true, participant: participantData, room });
+});
+
+// Leave Meeting Room
+app.post('/api/rooms/:roomId/leave', (req, res) => {
+  const { roomId } = req.params;
+  const { userId } = req.body;
+  const cleanId = roomId.toLowerCase().trim();
+
+  const room = liveRooms.get(cleanId);
+  if (room && userId) {
+    const leftParticipant = room.participants.find((p) => p.id === userId);
+    room.participants = room.participants.filter((p) => p.id !== userId);
+    if (leftParticipant) {
+      room.messages.push({
+        id: 'msg_leave_' + Date.now(),
+        senderId: 'system',
+        senderName: 'Session Protocol',
+        text: `${leftParticipant.name} has left the session.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isSystem: true,
+      });
+    }
+  }
+
+  return res.json({ success: true });
+});
+
+// Post Chat Message
+app.post('/api/rooms/:roomId/messages', (req, res) => {
+  const { roomId } = req.params;
+  const { senderId, senderName, senderRole, senderCountry, text } = req.body;
+  const cleanId = roomId.toLowerCase().trim();
+
+  const room = liveRooms.get(cleanId);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (!text || !text.trim()) {
+    return res.status(400).json({ error: 'Message cannot be empty' });
+  }
+
+  const newMsg: ChatMessage = {
+    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+    senderId: senderId || 'anonymous',
+    senderName: senderName || 'Delegate',
+    senderRole: senderRole || 'DELEGATE',
+    senderCountry: senderCountry || 'Delegation',
+    text: text.trim(),
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  };
+
+  room.messages.push(newMsg);
+  // Keep last 150 messages in memory
+  if (room.messages.length > 150) {
+    room.messages = room.messages.slice(-150);
+  }
+
+  return res.status(201).json({ success: true, message: newMsg });
+});
+
+// Update Participant Media State (Mute, Video, Hand Raise)
+app.post('/api/rooms/:roomId/participant-state', (req, res) => {
+  const { roomId } = req.params;
+  const { userId, isMuted, isVideoOn, isHandRaised, isSpeaking } = req.body;
+  const cleanId = roomId.toLowerCase().trim();
+
+  const room = liveRooms.get(cleanId);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  const p = room.participants.find((item) => item.id === userId);
+  if (p) {
+    if (typeof isMuted === 'boolean') p.isMuted = isMuted;
+    if (typeof isVideoOn === 'boolean') p.isVideoOn = isVideoOn;
+    if (typeof isHandRaised === 'boolean') p.isHandRaised = isHandRaised;
+    if (typeof isSpeaking === 'boolean') p.isSpeaking = isSpeaking;
+  }
+
+  return res.json({ success: true, participant: p });
+});
+
+// Update Committee State (GSL Queue, Timers)
+app.post('/api/rooms/:roomId/floor-state', (req, res) => {
+  const { roomId } = req.params;
+  const { speakersQueue, currentSpeakerIndex, speechDuration, timeLeft, isTimerRunning } = req.body;
+  const cleanId = roomId.toLowerCase().trim();
+
+  const room = liveRooms.get(cleanId);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  if (Array.isArray(speakersQueue)) room.speakersQueue = speakersQueue;
+  if (typeof currentSpeakerIndex === 'number') room.currentSpeakerIndex = currentSpeakerIndex;
+  if (typeof speechDuration === 'number') room.speechDuration = speechDuration;
+  if (typeof timeLeft === 'number') room.timeLeft = timeLeft;
+  if (typeof isTimerRunning === 'boolean') room.isTimerRunning = isTimerRunning;
+
+  return res.json({ success: true, room });
+});
+
 async function startServer() {
   // Vite middleware setup
   if (process.env.NODE_ENV !== 'production') {

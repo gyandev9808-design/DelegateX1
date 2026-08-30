@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Globe2, BookOpen, LogIn, LayoutDashboard, Shield, Bot, Radio, Menu, X } from 'lucide-react';
+import { Globe2, BookOpen, LogIn, LayoutDashboard, Shield, Bot, Radio, Video, Menu, X } from 'lucide-react';
 
 export default function Navbar() {
   const location = useLocation();
@@ -13,8 +13,9 @@ export default function Navbar() {
   };
 
   const navLinks = [
+    { to: '/meet', label: 'Live Meet', icon: Video },
     { to: '/training', label: 'Training', icon: BookOpen },
-    { to: '/committee', label: 'Live Floor', icon: Radio },
+    { to: '/committee', label: 'Floor Timer', icon: Radio },
     { to: '/ai-doubt-clarifier', label: 'AI Clarifier', icon: Bot },
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/admin', label: 'Secretariat', icon: Shield },

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import {
   Globe2,
@@ -11,11 +11,20 @@ import {
   CheckCircle2,
   Sparkles,
   ArrowLeft,
+  Info,
 } from 'lucide-react';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  const [searchParams] = useSearchParams();
+  const initialMode = searchParams.get('mode')?.toLowerCase() === 'register' ? 'REGISTER' : 'LOGIN';
+  const [mode, setMode] = useState<'LOGIN' | 'REGISTER'>(initialMode);
+
+  useEffect(() => {
+    if (searchParams.get('mode')?.toLowerCase() === 'register') {
+      setMode('REGISTER');
+    }
+  }, [searchParams]);
 
   // Form State
   const [name, setName] = useState('');
@@ -132,6 +141,15 @@ export default function AuthPage() {
             </button>
           </div>
 
+          {mode === 'REGISTER' && (
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-950/30 p-3 text-xs text-cyan-200 flex items-start gap-2.5">
+              <Shield className="h-4 w-4 text-cyan-300 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Country Portfolio Allotment:</strong> Countries are not assigned during initial registration. The Secretariat Admin will allocate your official delegation country and committee room upon registration approval.
+              </p>
+            </div>
+          )}
+
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'REGISTER' && (
@@ -208,29 +226,10 @@ export default function AuthPage() {
             </div>
           )}
 
-          {/* 1-Click Demo Logins */}
-          <div className="border-t border-white/10 pt-4 space-y-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block text-center">
-              1-Click Demo Access
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => useDemoCredentials('DELEGATE')}
-                className="rounded-xl border border-cyan-400/20 bg-cyan-950/30 p-2.5 text-xs text-cyan-200 hover:bg-cyan-900/40 transition flex items-center justify-center gap-1.5"
-              >
-                <User className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Delegate Demo</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => useDemoCredentials('ADMIN')}
-                className="rounded-xl border border-emerald-400/20 bg-emerald-950/30 p-2.5 text-xs text-emerald-200 hover:bg-emerald-900/40 transition flex items-center justify-center gap-1.5"
-              >
-                <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Secretariat Demo</span>
-              </button>
-            </div>
+          <div className="border-t border-white/10 pt-4 text-center">
+            <p className="text-xs text-slate-400">
+              Need assistance or committee access credentials? Contact the Secretariat Desk.
+            </p>
           </div>
         </div>
       </main>

@@ -15,6 +15,7 @@ import {
   Radio,
   Clock,
   CheckCircle,
+  Video,
 } from 'lucide-react';
 
 export default function CommitteePage() {
@@ -111,6 +112,14 @@ export default function CommitteePage() {
         </div>
 
         <div className="flex items-center space-x-3">
+          <Link
+            to="/meet/unsc-arkt-2026"
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-cyan-300 text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"
+          >
+            <Video className="w-4 h-4" />
+            <span>Join Live Video Meet</span>
+          </Link>
+
           <button
             onClick={() => setPlacardRaised(!placardRaised)}
             className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition shadow-lg ${

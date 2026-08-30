@@ -6,17 +6,14 @@ import {
   BookOpen,
   FileText,
   CheckCircle2,
-  Trophy,
   Video,
   Play,
-  Search,
   Check,
   CalendarDays,
   Mic2,
   FolderOpen,
   Radio,
-  ArrowRight,
-  Shield,
+  Award,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -60,17 +57,24 @@ export default function DashboardPage() {
               Welcome back, <span className="text-cyan-300">Delegate</span>
             </h1>
             <p className="mt-1 text-xs sm:text-sm text-slate-400">
-              Ready to defend your country's position and lead the committee floor?
+              Prepare your foreign policy stances and Rules of Procedure for the committee floor.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/training')}
+            <Link
+              to="/meet"
               className="flex items-center gap-2 rounded-full bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-200 hover:scale-105"
             >
-              <Sparkles className="h-4 w-4" />
-              <span>Build Country Brief</span>
+              <Video className="h-4 w-4" />
+              <span>Live Video Meet</span>
+            </Link>
+            <button
+              onClick={() => navigate('/training')}
+              className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-white hover:bg-white/10"
+            >
+              <Sparkles className="h-4 w-4 text-cyan-300" />
+              <span>Training</span>
             </button>
             <Link
               to="/committee"
@@ -113,10 +117,10 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Section 2: Syllabus Tracker + Daily Focus + Live Workshop & Global Rank */}
-        <div className="grid gap-6 lg:grid-cols-12">
+        {/* Section 2: Syllabus Tracker & Daily Focus Tasks */}
+        <div className="grid gap-6 md:grid-cols-2">
           {/* Syllabus tracker */}
-          <section className="delegate-panel rounded-3xl p-6 lg:col-span-4 flex flex-col justify-between">
+          <section className="delegate-panel rounded-3xl p-6 flex flex-col justify-between">
             <div>
               <div className="mb-5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-300">
                 <FileText className="h-4 w-4 text-cyan-300" />
@@ -160,7 +164,7 @@ export default function DashboardPage() {
           </section>
 
           {/* Daily focus checklist */}
-          <section className="delegate-panel rounded-3xl p-6 lg:col-span-5 flex flex-col justify-between">
+          <section className="delegate-panel rounded-3xl p-6 flex flex-col justify-between">
             <div>
               <div className="mb-5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-300">
                 <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -169,8 +173,8 @@ export default function DashboardPage() {
 
               <div className="space-y-3">
                 {[
-                  'Review French Republic position paper & Arctic treaties',
-                  'Practice 90-second GSL opening speech on floor timer',
+                  'Review foreign policy positions & Arctic treaties',
+                  'Practice 90-second GSL speech on floor timer',
                   'Draft 2 operative clauses for maritime security resolution',
                 ].map((item, index) => (
                   <label
@@ -211,62 +215,6 @@ export default function DashboardPage() {
               <span className="font-mono font-bold text-cyan-300 text-sm">+200 pts</span>
             </div>
           </section>
-
-          {/* Live session banner & global rank */}
-          <section className="space-y-4 lg:col-span-3">
-            {/* Live session */}
-            <div className="delegate-panel rounded-3xl p-5">
-              <div className="mb-2.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-300">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-rose-400" />
-                <span>Live Now</span>
-              </div>
-              <h3 className="font-bold text-white text-sm sm:text-base">Opening Speech Workshop</h3>
-              <p className="mt-1 text-xs text-slate-400">Join 42 other delegates practicing on the floor</p>
-              <Link
-                to="/committee"
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-2 text-xs font-bold text-slate-950 transition hover:bg-cyan-200 shadow-md"
-              >
-                <Video className="h-3.5 w-3.5" />
-                <span>Join Committee Floor</span>
-              </Link>
-            </div>
-
-            {/* Global rank */}
-            <div className="delegate-panel rounded-3xl p-5">
-              <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-300">
-                <Trophy className="h-4 w-4 text-amber-400" />
-                <span>Global Rank</span>
-              </div>
-
-              <div className="space-y-2">
-                {[
-                  ['1', 'Alex M. (USA)', '15.2k'],
-                  ['2', 'You (France)', '14.3k'],
-                  ['3', 'Sarah K. (UK)', '13.8k'],
-                ].map(([rank, name, points]) => (
-                  <div
-                    key={rank}
-                    className={`flex items-center justify-between rounded-xl p-2 text-xs ${
-                      rank === '2'
-                        ? 'border border-cyan-400/30 bg-cyan-400/10'
-                        : 'bg-white/[0.02]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="w-3 font-mono font-bold text-slate-500">{rank}</span>
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-400/20 text-[10px] font-bold text-cyan-300">
-                        {name[0]}
-                      </span>
-                      <span className={rank === '2' ? 'font-bold text-cyan-300' : 'text-slate-300'}>
-                        {name}
-                      </span>
-                    </span>
-                    <span className="font-mono text-slate-400 font-semibold">{points}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
         </div>
 
         {/* Section 3: Quick Actions */}
@@ -278,12 +226,12 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
-              [Trophy, 'Motion Practice', '/training'],
+              [Award, 'Motion Practice', '/training'],
               [CalendarDays, 'Conference Planner', '/training'],
               [Mic2, 'Speech Rehearsal', '/committee'],
               [FolderOpen, 'AI Doubt Clarifier', '/ai-doubt-clarifier'],
             ].map(([Icon, label, path]) => {
-              const ActionIcon = Icon as typeof Trophy;
+              const ActionIcon = Icon as typeof Award;
               return (
                 <Link
                   key={label as string}
