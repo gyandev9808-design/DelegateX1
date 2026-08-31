@@ -21,6 +21,7 @@ import {
   X,
   UserPlus,
   LayoutDashboard,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -41,6 +42,7 @@ export default function AiDoubtClarifierPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const [history, setHistory] = useState<ClarificationItem[]>([
     {
@@ -95,10 +97,10 @@ export default function AiDoubtClarifierPage() {
       }
 
       const newItem: ClarificationItem = {
-        id: Date.now().toString(),
+        id: Date.now().toString() + '_' + Math.random().toString(36).substring(2, 6),
         question: query,
         answer: data.answer || 'In MUN proceedings, ensure your query specifies the committee format (UN4MUN vs THIMUN) and relevant sovereign country stance.',
-        source: data.source === 'gemini' ? 'Gemini 2.5 Flash' : 'DelegateX Knowledge Engine',
+        source: data.source === 'gemini' ? 'Gemini 3.7 Flash' : 'DelegateX Knowledge Engine',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -109,6 +111,14 @@ export default function AiDoubtClarifierPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDeleteItem = (id: string) => {
+    setHistory((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleClearAllHistory = () => {
+    setHistory([]);
   };
 
   const copyToClipboard = (id: string, text: string) => {
@@ -274,51 +284,103 @@ export default function AiDoubtClarifierPage() {
 
         {/* Responses Stream / History */}
         <div className="space-y-4">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">
-            Clarification Stream ({history.length})
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">
+              Clarification Stream ({history.length})
+            </h2>
+            {history.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllHistory}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-white/10 text-xs font-medium text-slate-400 hover:text-rose-300 hover:border-rose-500/30 hover:bg-rose-950/20 transition"
+                title="Clear all clarification chats"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear All Chats</span>
+              </button>
+            )}
+          </div>
 
-          {history.map((item) => (
-            <div
-              key={item.id}
-              className="delegate-panel rounded-2xl p-5 sm:p-6 space-y-3 transition duration-300"
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
-                <div className="flex items-start space-x-2.5">
-                  <div className="p-1.5 rounded-lg bg-cyan-400/10 text-cyan-300 shrink-0 mt-0.5">
-                    <MessageSquareText className="w-4 h-4" />
+          {history.length === 0 ? (
+            <div className="delegate-panel rounded-2xl p-8 text-center space-y-3">
+              <div className="p-3 w-12 h-12 rounded-2xl bg-cyan-400/10 text-cyan-300 mx-auto flex items-center justify-center">
+                <MessageSquareText className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-white">No questions in history</h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Ask any question about Model UN procedures, draft resolution clauses, speech techniques, or voting rules above.
+              </p>
+              <button
+                type="button"
+                onClick={() => handleAsk(presetQuestions[0])}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-300 text-slate-950 font-bold text-xs hover:bg-cyan-200 transition shadow-md shadow-cyan-500/20"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Ask Sample Question</span>
+              </button>
+            </div>
+          ) : (
+            history.map((item) => (
+              <div
+                key={item.id}
+                className="delegate-panel rounded-2xl p-5 sm:p-6 space-y-3 transition duration-300 relative group"
+              >
+                <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+                  <div className="flex items-start space-x-2.5">
+                    <div className="p-1.5 rounded-lg bg-cyan-400/10 text-cyan-300 shrink-0 mt-0.5">
+                      <MessageSquareText className="w-4 h-4" />
+                    </div>
+                    <h3 className="text-sm sm:text-base font-bold text-white leading-snug">
+                      {item.question}
+                    </h3>
                   </div>
-                  <h3 className="text-sm sm:text-base font-bold text-white leading-snug">
-                    {item.question}
-                  </h3>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => copyToClipboard(item.id, item.answer)}
+                      className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:text-white transition"
+                      title="Copy answer"
+                    >
+                      {copiedId === item.id ? (
+                        <Check className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteItem(item.id)}
+                      className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:text-rose-400 hover:border-rose-500/30 hover:bg-rose-950/30 transition"
+                      title="Delete chat message"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  onClick={() => copyToClipboard(item.id, item.answer)}
-                  className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:text-white transition shrink-0"
-                  title="Copy answer"
-                >
-                  {copiedId === item.id ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
+                {/* Answer Content */}
+                <div className="text-xs sm:text-sm text-slate-200 leading-relaxed space-y-2 whitespace-pre-wrap">
+                  {item.answer}
+                </div>
 
-              {/* Answer Content */}
-              <div className="text-xs sm:text-sm text-slate-200 leading-relaxed space-y-2 whitespace-pre-wrap">
-                {item.answer}
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-white/5">
+                  <span className="flex items-center gap-1.5 text-cyan-400/80 font-medium">
+                    <ShieldCheck className="w-3.5 h-3.5" /> Source: {item.source || 'AI Engine'}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span>{item.time}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteItem(item.id)}
+                      className="text-slate-500 hover:text-rose-400 transition text-[10px] underline underline-offset-2"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
               </div>
-
-              <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-white/5">
-                <span className="flex items-center gap-1.5 text-cyan-400/80 font-medium">
-                  <ShieldCheck className="w-3.5 h-3.5" /> Source: {item.source || 'AI Engine'}
-                </span>
-                <span>{item.time}</span>
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Benefits Grid */}

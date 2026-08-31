@@ -51,6 +51,8 @@ export default function AuthPage() {
   const [email, setEmail] = useState(emailParam || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [regAccountType, setRegAccountType] = useState<'DELEGATE' | 'ADMIN'>('DELEGATE');
+  const [secretariatPasskey, setSecretariatPasskey] = useState('');
   const [country, setCountry] = useState('United States');
   const [committee, setCommittee] = useState('UN Security Council (UNSC)');
 
@@ -153,7 +155,7 @@ export default function AuthPage() {
     }
   };
 
-  // Handle Register Submit (Delegates strictly)
+  // Handle Register Submit (Delegates or Secretariat Admin)
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
@@ -177,7 +179,15 @@ export default function AuthPage() {
     }
 
     if (/^\d+$/.test(name.trim())) {
-      setFeedback({ text: 'Please enter your full diplomat name or chosen name, not a numeric user ID.', type: 'error' });
+      setFeedback({ text: 'Please enter your full name or diplomat name, not a numeric user ID.', type: 'error' });
+      return;
+    }
+
+    if (regAccountType === 'ADMIN' && !secretariatPasskey.trim()) {
+      setFeedback({
+        text: 'Secretariat Passkey is required to create an Admin account. (e.g. AdminSecretariat2026!)',
+        type: 'error',
+      });
       return;
     }
 
@@ -186,19 +196,30 @@ export default function AuthPage() {
       name,
       email,
       password,
-      role: 'DELEGATE',
-      title: 'Distinguished Delegate',
+      role: regAccountType === 'ADMIN' ? 'ADMIN' : 'DELEGATE',
+      title: regAccountType === 'ADMIN' ? 'Secretariat Administrator' : 'Distinguished Delegate',
+      secretariatPasskey: regAccountType === 'ADMIN' ? secretariatPasskey.trim() : undefined,
     });
     setLoading(false);
 
     if (res.success && res.user) {
+      const isAdminRole = res.user.role === 'ADMIN' || res.user.role === 'MASTER_ADMIN' || res.user.role === 'CHAIR';
       setFeedback({
-        text: `Account created successfully for ${res.user.name}! Opening Delegate Dashboard...`,
+        text: isAdminRole
+          ? `Secretariat Admin Account created successfully for ${res.user.name}! Opening Master Secretariat Panel...`
+          : `Delegate Account created successfully for ${res.user.name}! Opening Delegate Dashboard...`,
         type: 'success',
       });
-      navigate('/dashboard');
+      setTimeout(() => {
+        if (isAdminRole) {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
+      }, 700);
     } else {
       setFeedback({ text: res.error || 'Registration failed.', type: 'error' });
+      setRegCaptchaVerified(false);
     }
   };
 
@@ -717,6 +738,63 @@ export default function AuthPage() {
                 </div>
               )}
 
+              {/* Account Type Selector: Delegate vs Secretariat Admin */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300 block">
+                  Account Type
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRegAccountType('DELEGATE')}
+                    className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition ${
+                      regAccountType === 'DELEGATE'
+                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200'
+                        : 'border-white/10 bg-slate-950/60 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Globe2 className="h-3.5 w-3.5" />
+                    <span>Distinguished Delegate</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRegAccountType('ADMIN')}
+                    className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition ${
+                      regAccountType === 'ADMIN'
+                        ? 'border-amber-400 bg-amber-950/40 text-amber-200'
+                        : 'border-white/10 bg-slate-950/60 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Shield className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Secretariat Admin</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Secretariat Passkey Input if Admin is selected */}
+              {regAccountType === 'ADMIN' && (
+                <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
+                    <Shield className="h-4 w-4 shrink-0" />
+                    <span>Secretariat Authorization Passkey Required</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    Only authorized conference staff may register an Admin account. Enter the Master Secretariat passkey (<code className="text-amber-300 font-mono">AdminSecretariat2026!</code>).
+                  </p>
+                  <div className="relative">
+                    <KeyRound className="w-4 h-4 text-amber-400 absolute left-3.5 top-3" />
+                    <input
+                      required
+                      type="password"
+                      value={secretariatPasskey}
+                      onChange={(e) => setSecretariatPasskey(e.target.value)}
+                      placeholder="Enter Secretariat Passkey"
+                      className="w-full rounded-xl border border-amber-500/40 bg-slate-950/90 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Cloudflare Captcha in Register */}
               <div className="space-y-1">
                 <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
@@ -739,13 +817,17 @@ export default function AuthPage() {
               <button
                 type="submit"
                 disabled={loading || !regCaptchaVerified}
-                className="w-full rounded-xl bg-cyan-300 py-3 text-xs sm:text-sm font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`w-full rounded-xl py-3 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                  regAccountType === 'ADMIN'
+                    ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-500/20'
+                    : 'bg-cyan-300 hover:bg-cyan-200 shadow-cyan-500/20'
+                }`}
               >
                 {loading ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
-                    <span>Create Delegate Account</span>
+                    <span>{regAccountType === 'ADMIN' ? 'Create Secretariat Admin Account & Open Console' : 'Create Delegate Account'}</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}

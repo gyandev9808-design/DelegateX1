@@ -26,35 +26,55 @@ app.use('/api', (req, res, next) => {
 
 // Intelligent MUN fallback responses
 const getMunFallbackReply = (question: string) => {
-  const normalized = question.toLowerCase();
-  if (/^(hi|hello|hey|who are you)\b/.test(normalized)) {
-    return "Hello! I am DelegateX Clarifier, your dedicated Model UN AI tutor. Ask me about MUN rules of procedure (RoP), speechwriting, moderated & unmoderated caucuses, resolution clauses, crisis notes, or country stances.";
+  const normalized = question.toLowerCase().trim();
+  if (/^(hi|hello|hey|greetings|who are you)\b/.test(normalized)) {
+    return "Hello! I am DelegateX Clarifier, your dedicated Model UN and diplomatic AI tutor. Ask me about MUN Rules of Procedure (RoP), speechwriting, moderated & unmoderated caucuses, resolution clauses, crisis notes, points and motions, country stances, or any diplomatic questions.";
   }
-  if (normalized.includes("what is mun") || normalized.includes("what does mun mean")) {
-    return "Model United Nations (MUN) is an academic simulation of the UN where students represent diplomatic delegations, debate global agendas, negotiate with allies and adversaries, and draft binding or recommendatory resolutions.";
+  if (normalized.includes("sponsor") || normalized.includes("signator")) {
+    return "• **Sponsors**: Delegations that actively author, draft, and agree with the entire content of a draft resolution. Usually 2 to 5 per paper.\n• **Signatories**: Delegations that wish to see the draft resolution introduced on the floor for formal debate and voting, regardless of whether they support all clauses. Usually requires 20–25% of the committee.";
   }
-  if (normalized.includes("what is gsl") || normalized.includes("general speakers list")) {
-    return "The General Speakers List (GSL) is the primary formal debate queue. Each delegation is recognized in turn (typically 60–90 seconds) to outline their country's foreign policy stance and broad agenda objectives.";
+  if (normalized.includes("what is mun") || normalized.includes("what does mun mean") || normalized.includes("model united nations")) {
+    return "Model United Nations (MUN) is an academic simulation of UN committees where delegates represent sovereign nations or historical figures. Delegates debate global agendas, caucus with allies, draft resolutions, and vote under formal Rules of Procedure (RoP).";
   }
-  if (normalized.includes("moderated caucus")) {
-    return "A Moderated Caucus is a focused, time-limited debate on a specific subtopic (e.g. 10 minutes total, 60 seconds per speaker). The Chair recognizes delegates one at a time to dive deeper into contentious policy areas.";
+  if (normalized.includes("gsl") || normalized.includes("general speakers list") || normalized.includes("general speaker")) {
+    return "The **General Speakers List (GSL)** is the default formal debate list in committee:\n• **Purpose**: Establish your delegation's core stance on the agenda item.\n• **Time Limit**: Usually 60 or 90 seconds per speaker.\n• **Structure**: Hook (15s) → National Policy & Past Actions (45s) → Multilateral Proposals (30s).\n• **Yielding**: If remaining time exceeds 10s, yield to: the Chair, Questions (Points of Information), or another delegate.";
+  }
+  if (normalized.includes("moderated caucus") || normalized.includes("mod caucus")) {
+    return "A **Moderated Caucus** is a focused debate on a specific sub-agenda:\n• **Motion format**: *\"The Delegation of [Country] moves for a Moderated Caucus of [Total Time, e.g. 9 minutes] with an individual speaker's time of [Time, e.g. 45 seconds] on the topic of [Specific Subtopic].\"*\n• **Chair Role**: Recognizes delegates with raised placards one at a time.\n• **Goal**: Delve into specific points of contention without going into broad generalities.";
   }
   if (normalized.includes("unmoderated caucus") || normalized.includes("unmod")) {
-    return "An Unmoderated Caucus is an informal negotiation session where delegates freely move around the committee room to form voting blocs, negotiate compromise language, and author working papers/draft resolutions.";
+    return "An **Unmoderated Caucus (Unmod)** is an informal working session:\n• **Format**: Delegates stand up, move freely around the room, form regional/ideological blocs, and author working papers/resolutions.\n• **Motion format**: *\"The Delegation of [Country] moves for an Unmoderated Caucus for a total time of [e.g. 15 minutes].\"*\n• **Strategy**: Identify lead sponsors early, divide clause drafting responsibilities, and negotiate with undecided signatory countries.";
   }
-  if (normalized.includes("point of order") || normalized.includes("point of information") || normalized.includes("point of personal privilege") || normalized.includes("points")) {
-    return "The 4 core Points in MUN are:\n1. Point of Personal Privilege: For environmental discomfort (audibility, temperature).\n2. Point of Order: When procedural rules or RoP have been violated.\n3. Point of Parliamentary Inquiry: Asking the Chair a procedural question.\n4. Point of Information: Asking the speaker a factual/policy question following their speech (where allowed).";
+  if (normalized.includes("point of order") || normalized.includes("point of information") || normalized.includes("point of personal privilege") || normalized.includes("parliamentary inquiry") || normalized.includes("points")) {
+    return "The 4 fundamental **Points** in Model UN:\n1. **Point of Personal Privilege**: Raised when there is physical/environmental discomfort (e.g. audibility, room temperature, screen visibility). *Can interrupt a speaker ONLY if audibility is impaired.*\n2. **Point of Order**: Raised immediately when the Chair or a delegate violates formal Rules of Procedure.\n3. **Point of Parliamentary Inquiry**: A question to the Dais regarding procedural rules or the current state of debate.\n4. **Point of Information**: A direct substantive question directed to a delegate who has just completed their speech and yielded to questions.";
   }
-  if (normalized.includes("resolution") || normalized.includes("draft resolution") || normalized.includes("clauses")) {
-    return "A Draft Resolution is structured into two parts:\n• Preambulatory Clauses (italics, ending with commas): Cite historical UN precedents, treaties (e.g., 'Emphasizing', 'Recalling', 'Deeply concerned').\n• Operative Clauses (numbered, underlined verbs, ending with semicolons): Dictate tangible committee actions (e.g., '1. Calls upon...', '2. Recommends...', '3. Authorizes...').";
+  if (normalized.includes("resolution") || normalized.includes("draft resolution") || normalized.includes("clause") || normalized.includes("preamb")) {
+    return "A **Draft Resolution** is the official solution document of a committee:\n\n• **Preambulatory Clauses** *(Italicized verbs, ending in commas)*:\nState the context, historical treaties, and justification.\n*Examples*: *Guided by* the UN Charter, *Recalling* resolution 242, *Deeply concerned by*...\n\n• **Operative Clauses** *(Numbered, underlined verbs, ending in semicolons, final clause ending in a period)*:\nDirect tangible actions, funding, commissions, or mandates.\n*Examples*: <u>1. Calls upon</u> Member States to..., <u>2. Authorizes</u> the dispatch of..., <u>3. Decides</u> to remain seized of the matter.";
   }
-  if (normalized.includes("veto") || normalized.includes("p5")) {
-    return "The Veto Power belongs exclusively to the P5 (Permanent 5: USA, UK, France, China, Russia) in the UN Security Council. If any P5 member votes 'Against' a substantive resolution, it fails regardless of majority vote count.";
+  if (normalized.includes("veto") || normalized.includes("p5") || normalized.includes("security council")) {
+    return "The **P5 Veto Power** in the UN Security Council (UNSC):\n• Held by: **United States, United Kingdom, France, China, and the Russian Federation**.\n• Under UN Charter Article 27(3), substantive resolutions require 9 affirmative votes and **NO negative votes** from any P5 member.\n• An abstention by a P5 member does **not** count as a veto.";
   }
-  if (normalized.includes("opening") || normalized.includes("speech")) {
-    return "A powerhouse MUN Opening Speech follows the 'Hook, Point, Action' formula:\n1. Hook (15s): Start with a striking statistic, quote, or sovereign principle.\n2. Point (45s): Articulate your country's national interest, past contributions, and red lines.\n3. Call to Action (30s): Propose 2 actionable pillars and invite like-minded delegations to collaborate in caucus.";
+  if (normalized.includes("crisis") || normalized.includes("directive") || normalized.includes("backroom") || normalized.includes("portfolio")) {
+    return "In **Crisis Committees**:\n• **Portfolio Powers**: Use your character/country's unique personal assets (troops, state intelligence, media control, private capital).\n• **Directives**: Orders signed by multiple delegates to execute committee actions in the real-time simulation.\n• **Personal Crisis Notes**: Secret written directives sent to the Backroom Crisis Staff to build leverage, acquire assets, or launch strategic actions.\n• **Speed & Adaptability**: React dynamically as crisis updates break onto the floor.";
   }
-  return "In diplomatic negotiations, structure your query around four key pillars:\n1. The core dilemma or sovereign dispute;\n2. The relevant treaty or UN charter mandate;\n3. Your delegation's strategic red lines;\n4. A multilateral framework that balances security with international consensus.";
+  if (normalized.includes("opening speech") || normalized.includes("speech") || normalized.includes("hook")) {
+    return "Framework for a winning **Opening Speech (90 seconds)**:\n1. **Hook (15s)**: A compelling sovereign principle, striking metric, or historical quote.\n2. **National Stance (35s)**: Clear position of your country, past actions taken, and national constraints.\n3. **Action Pillars (30s)**: Propose 2–3 tangible solutions (e.g. multilateral monitoring, sovereign aid fund, regulatory framework).\n4. **Call to Unity (10s)**: Invite like-minded delegations to collaborate in the upcoming unmoderated caucus.";
+  }
+  if (normalized.includes("voting") || normalized.includes("roll call") || normalized.includes("majority") || normalized.includes("substantive") || normalized.includes("procedural")) {
+    return "MUN **Voting Rules**:\n• **Procedural Votes** (e.g. motions for caucuses, adjournment): All delegates must vote 'Yes' or 'No'. No abstentions allowed. Requires Simple Majority (>50%).\n• **Substantive Votes** (e.g. draft resolutions, amendments): Delegates can vote 'Yes', 'No', 'Abstain', or 'Pass' (on first round of Roll Call). Requires simple majority or 2/3 majority depending on committee rules.";
+  }
+  if (normalized.includes("amendment") || normalized.includes("friendly") || normalized.includes("unfriendly")) {
+    return "• **Friendly Amendment**: Agreed to by **all** primary sponsors of the draft resolution. Integrated automatically into the text without requiring committee floor debate or vote.\n• **Unfriendly Amendment**: Proposed by other delegates and not accepted by all sponsors. Requires a specific number of signatories and must be debated and voted upon before voting on the draft resolution as a whole.";
+  }
+  if (normalized.includes("position paper") || normalized.includes("research")) {
+    return "A **Position Paper** consists of 3 distinct sections:\n1. **Topic Background**: Brief global summary of the agenda item.\n2. **National Policy**: Your country's past resolutions, domestic laws, and sovereign treaties.\n3. **Proposed Solutions**: Concrete, creative operative actions your delegation intends to champion during committee.";
+  }
+  // Generic intelligent breakdown for specific custom questions
+  return `Based on your question ("${question.replace(/"/g, '')}"):
+
+• **Key Diplomatic Principle**: In international negotiations, align your position with the relevant UN Charter articles, treaty frameworks, and committee mandate.
+• **Procedural Best Practice**: Always establish whether the action is recommendatory (General Assembly) or binding (UN Security Council under Chapter VII).
+• **Actionable Advice**: Frame your response around three pillars: (1) Sovereign legitimacy, (2) Multilateral consensus, and (3) Concrete monitoring and implementation mechanisms.`;
 };
 
 // API Routes
@@ -76,13 +96,24 @@ app.post('/api/ai-doubt-clarifier', async (req, res) => {
 
     if (apiKey) {
       try {
-        const ai = new GoogleGenAI({ apiKey });
-        const systemInstruction = `You are DelegateX Clarifier, a master Model United Nations (MUN) diplomat, Secretariat Chair, and speech coach.
-Provide concise, authoritative, and practical advice on MUN Rules of Procedure (UN4MUN, THIMUN, HMUN), caucus strategies, drafting operative clauses, delivering powerhouse opening speeches, and diplomatic negotiation.
-Keep responses sharp, structured, engaging, and under 180 words with clear bullet points where helpful.`;
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: {
+            headers: {
+              'User-Agent': 'aistudio-build',
+            },
+          },
+        });
+
+        const systemInstruction = `You are DelegateX AI Diplomatic Clarifier, an expert Model United Nations (MUN) diplomat, Secretariat Chair, speech coach, and international affairs tutor.
+Your primary directive is to directly, accurately, and thoroughly answer the specific question asked by the user.
+- Provide practical, authoritative, and actionable answers tailored precisely to the question.
+- Cover MUN Rules of Procedure (UN4MUN, THIMUN, Harvard MUN), caucus motions, draft resolutions (preambulatory and operative clauses), speaking techniques, crisis backroom strategies, voting thresholds, P5 veto rules, or foreign policy positions as relevant to what the user asked.
+- If the question is about a specific diplomatic or general topic, answer it directly and factually.
+- Keep responses clear, structured, engaging, and readable using bullet points, numbered steps, or bold headers where appropriate.`;
 
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.7-flash',
           contents: cleanQuestion,
           config: {
             systemInstruction,
@@ -369,7 +400,7 @@ app.post('/api/auth/purge-delegates', (req, res) => {
 });
 app.post('/api/auth/register', (req, res) => {
   try {
-    const { name, email, password, role, title, country, committee } = req.body;
+    const { name, email, password, role, title, country, committee, secretariatPasskey } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length < 2) {
       return res.status(400).json({ error: 'Full name is required (at least 2 characters).' });
     }
@@ -385,7 +416,16 @@ app.post('/api/auth/register', (req, res) => {
       return res.status(409).json({ error: 'An account with this email address already exists. Please sign in or use password reset.' });
     }
 
-    const assignedRole = role || (cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin') ? 'ADMIN' : 'DELEGATE');
+    let assignedRole: 'MASTER_ADMIN' | 'ADMIN' | 'CHAIR' | 'DELEGATE' = role || (cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin') ? 'ADMIN' : 'DELEGATE');
+
+    if (assignedRole === 'ADMIN' || assignedRole === 'MASTER_ADMIN' || assignedRole === 'CHAIR') {
+      const cleanKey = (secretariatPasskey || '').trim();
+      const isAuthorized = cleanKey === 'AdminSecretariat2026!' || cleanKey === 'Secretariat2026!' || cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin');
+      if (!isAuthorized) {
+        return res.status(403).json({ error: 'Invalid Secretariat Passkey. An authorized passkey is required to create an Admin account.' });
+      }
+    }
+
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const newUser: StoredUser = {
@@ -393,7 +433,7 @@ app.post('/api/auth/register', (req, res) => {
       name: name.trim(),
       email: cleanEmail,
       role: assignedRole,
-      title: title || (assignedRole === 'MASTER_ADMIN' ? 'Secretary-General' : assignedRole === 'ADMIN' ? 'Secretariat Administrator' : assignedRole === 'CHAIR' ? 'Executive Board Chair' : 'Distinguished Delegate'),
+      title: title || (assignedRole === 'MASTER_ADMIN' ? 'Secretary-General & Master Admin' : assignedRole === 'ADMIN' ? 'Secretariat Administrator' : assignedRole === 'CHAIR' ? 'Executive Board Chair' : 'Distinguished Delegate'),
       country: country || (assignedRole === 'DELEGATE' ? 'United States' : 'Secretariat Dais'),
       committee: committee || 'UN Security Council (UNSC)',
       avatarColor: assignedRole === 'MASTER_ADMIN' ? 'from-cyan-500 to-blue-600' : assignedRole === 'ADMIN' ? 'from-amber-500 to-orange-600' : assignedRole === 'CHAIR' ? 'from-emerald-500 to-teal-600' : 'from-indigo-500 to-cyan-600',
@@ -1359,6 +1399,36 @@ app.post('/api/rooms/:roomId/messages', (req, res) => {
   }
 
   return res.status(201).json({ success: true, message: newMsg });
+});
+
+// Delete specific chat message in a room
+app.delete('/api/rooms/:roomId/messages/:messageId', (req, res) => {
+  const { roomId, messageId } = req.params;
+  const cleanId = roomId.toLowerCase().trim();
+
+  const room = liveRooms.get(cleanId);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  const initialLen = room.messages.length;
+  room.messages = room.messages.filter((m) => m.id !== messageId);
+
+  return res.json({ success: true, deleted: room.messages.length < initialLen });
+});
+
+// Clear all chat messages in a room
+app.delete('/api/rooms/:roomId/messages', (req, res) => {
+  const { roomId } = req.params;
+  const cleanId = roomId.toLowerCase().trim();
+
+  const room = liveRooms.get(cleanId);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  room.messages = [];
+  return res.json({ success: true, count: 0 });
 });
 
 // Update Participant Media State (Mute, Video, Hand Raise)

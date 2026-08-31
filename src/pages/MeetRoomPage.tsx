@@ -685,6 +685,24 @@ export default function MeetRoomPage() {
     } catch {}
   };
 
+  const handleDeleteMessage = async (msgId: string) => {
+    setChatMessages((prev) => prev.filter((m) => m.id !== msgId));
+    try {
+      await fetch(`/api/rooms/${cleanRoomId}/messages/${msgId}`, {
+        method: 'DELETE',
+      });
+    } catch {}
+  };
+
+  const handleClearChat = async () => {
+    setChatMessages([]);
+    try {
+      await fetch(`/api/rooms/${cleanRoomId}/messages`, {
+        method: 'DELETE',
+      });
+    } catch {}
+  };
+
   useEffect(() => {
     if (chatBottomRef.current) {
       chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -1157,18 +1175,30 @@ export default function MeetRoomPage() {
                 {activeSidePanel === 'FLOOR' && <Clock className="h-4 w-4 text-emerald-400" />}
                 {activeSidePanel === 'INFO' && <Info className="h-4 w-4 text-cyan-300" />}
                 <h3 className="font-bold text-white text-sm">
-                  {activeSidePanel === 'CHAT' && 'In-Call Messages'}
+                  {activeSidePanel === 'CHAT' && `In-Call Messages (${chatMessages.length})`}
                   {activeSidePanel === 'PEOPLE' && `Delegations (${participants.length + 1})`}
                   {activeSidePanel === 'FLOOR' && 'GSL Debate & Motions'}
                   {activeSidePanel === 'INFO' && 'Joining Details'}
                 </h3>
               </div>
-              <button
-                onClick={() => setActiveSidePanel(null)}
-                className="text-slate-400 hover:text-white p-1 text-sm font-bold"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                {activeSidePanel === 'CHAT' && chatMessages.length > 0 && (
+                  <button
+                    onClick={handleClearChat}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-[10px] text-slate-400 hover:text-rose-400 hover:border-rose-500/30 transition"
+                    title="Clear in-call chat"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    <span>Clear</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setActiveSidePanel(null)}
+                  className="text-slate-400 hover:text-white p-1 text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* TAB: IN-CALL CHAT */}
@@ -1179,31 +1209,58 @@ export default function MeetRoomPage() {
                     Messages can be seen only by people in the call and are deleted when the call ends.
                   </div>
 
-                  {chatMessages.map((msg) => {
-                    const isSelf = msg.senderId === localUserId;
-                    return (
-                      <div
-                        key={msg.id}
-                        className={`flex flex-col ${isSelf ? 'items-end' : 'items-start'} space-y-1`}
-                      >
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                          <span className="font-bold text-slate-300">
-                            {msg.senderName} {isSelf && '(You)'}
-                          </span>
-                          <span>· {msg.timestamp}</span>
-                        </div>
+                  {chatMessages.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500 text-xs">
+                      No messages yet. Send a message to all delegates on the floor.
+                    </div>
+                  ) : (
+                    chatMessages.map((msg) => {
+                      const isSelf = msg.senderId === localUserId;
+                      const canDelete = isSelf || localRole === 'CHAIR';
+                      return (
                         <div
-                          className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${
-                            isSelf
-                              ? 'bg-cyan-500 text-slate-950 font-medium rounded-tr-none'
-                              : 'bg-slate-900 border border-white/10 text-white rounded-tl-none'
-                          }`}
+                          key={msg.id}
+                          className={`flex flex-col ${isSelf ? 'items-end' : 'items-start'} space-y-1 group relative`}
                         >
-                          {msg.text}
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                            <span className="font-bold text-slate-300">
+                              {msg.senderName} {isSelf && '(You)'}
+                            </span>
+                            <span>· {msg.timestamp}</span>
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                className="opacity-0 group-hover:opacity-100 hover:text-rose-400 text-slate-500 p-0.5 transition"
+                                title="Delete message"
+                              >
+                                <Trash2 className="h-2.5 w-2.5" />
+                              </button>
+                            )}
+                          </div>
+                          <div
+                            className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed flex items-center justify-between gap-2 ${
+                              isSelf
+                                ? 'bg-cyan-500 text-slate-950 font-medium rounded-tr-none'
+                                : 'bg-slate-900 border border-white/10 text-white rounded-tl-none'
+                            }`}
+                          >
+                            <span className="break-words">{msg.text}</span>
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeleteMessage(msg.id)}
+                                className={`opacity-0 group-hover:opacity-100 transition p-1 rounded hover:bg-black/10 shrink-0 ${
+                                  isSelf ? 'text-slate-800 hover:text-slate-950' : 'text-slate-400 hover:text-rose-400'
+                                }`}
+                                title="Delete this message"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                   <div ref={chatBottomRef} />
                 </div>
 

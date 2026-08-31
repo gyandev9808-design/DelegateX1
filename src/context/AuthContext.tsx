@@ -9,6 +9,7 @@ interface RegisterData {
   title?: string;
   country?: string;
   committee?: string;
+  secretariatPasskey?: string;
 }
 
 interface AuthContextType {

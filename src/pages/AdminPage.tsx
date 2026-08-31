@@ -208,6 +208,87 @@ export default function AdminPage() {
     showNotice('Delegation added to roster.');
   };
 
+  const isDelegate = isAuthenticated && user?.role === 'DELEGATE';
+  const isAdminOrChair = isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'MASTER_ADMIN' || user?.role === 'CHAIR');
+
+  // If not authenticated or user is a delegate, show the Secretariat Access Barrier
+  if (!isAuthenticated || isDelegate) {
+    return (
+      <div className="delegate-page min-h-screen text-slate-100 pt-20 pb-16 flex flex-col selection:bg-cyan-500/20 selection:text-cyan-200">
+        <Navbar />
+        <div className="max-w-xl mx-auto px-4 py-16 flex-1 flex flex-col justify-center items-center text-center">
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-6 shadow-xl shadow-amber-500/5">
+            <ShieldCheck className="h-12 w-12 mx-auto" />
+          </div>
+
+          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider mb-3">
+            Secretariat Access Restricted
+          </span>
+
+          <h1 className="text-2xl sm:text-3xl font-black text-white mb-3 tracking-tight">
+            Admin Account Only
+          </h1>
+
+          <p className="text-sm text-slate-300 mb-8 max-w-md leading-relaxed">
+            {isDelegate ? (
+              <>
+                You are currently signed in as <strong className="text-cyan-300">{user?.name}</strong> (<em>Distinguished Delegate</em>). The Master Secretariat Panel is exclusively accessible to authorized Secretariat Administrators and Executive Board Chairs.
+              </>
+            ) : (
+              <>
+                The Master Secretariat Panel is restricted to authorized conference administrators, Executive Board chairs, and secretariat directors. Please sign in with an Admin account to proceed.
+              </>
+            )}
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-sm">
+            {isDelegate ? (
+              <>
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="w-full py-3 px-4 rounded-xl bg-cyan-300 text-slate-950 font-bold text-xs sm:text-sm hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Go to Delegate Dashboard</span>
+                </button>
+                <button
+                  onClick={() => {
+                    logout();
+                    navigate('/auth');
+                  }}
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 border border-white/10 text-white font-semibold text-xs sm:text-sm hover:bg-slate-800 transition flex items-center justify-center gap-2"
+                >
+                  <LogOut className="h-4 w-4 text-rose-400" />
+                  <span>Sign In as Admin</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => navigate('/auth')}
+                  className="w-full py-3 px-4 rounded-xl bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm hover:bg-amber-300 transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+                >
+                  <LogIn className="h-4 w-4" />
+                  <span>Sign In to Admin Account</span>
+                </button>
+                <button
+                  onClick={() => navigate('/')}
+                  className="w-full py-3 px-4 rounded-xl bg-slate-900 border border-white/10 text-slate-300 font-semibold text-xs sm:text-sm hover:bg-slate-800 transition flex items-center justify-center gap-2"
+                >
+                  <span>Return to Home</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="mt-8 p-3 rounded-xl bg-slate-950/80 border border-white/5 text-[11px] text-slate-400 max-w-md">
+            <span>Default Admin: <code className="text-amber-300 font-mono">gyan.dev9808@gmail.com</code> | Passkey: <code className="text-amber-300 font-mono">AdminSecretariat2026!</code></span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="delegate-page min-h-screen text-slate-100 pt-20 pb-16 flex flex-col selection:bg-cyan-500/20 selection:text-cyan-200">
       <Navbar />

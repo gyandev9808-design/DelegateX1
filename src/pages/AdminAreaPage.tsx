@@ -103,7 +103,61 @@ export default function AdminAreaPage() {
     setTimeout(() => setSimulatedActionMessage(''), 3000);
   };
 
-  const isDelegate = user?.role === 'DELEGATE';
+  const isDelegate = isAuthenticated && user?.role === 'DELEGATE';
+  const isAdminOrChair = isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'MASTER_ADMIN' || user?.role === 'CHAIR');
+
+  // If not authenticated or user is a delegate, show Secretariat Access Barrier
+  if (!isAuthenticated || isDelegate) {
+    return (
+      <div className="delegate-page min-h-screen text-slate-100 pt-24 pb-16 flex flex-col selection:bg-cyan-500/20 selection:text-cyan-200">
+        <Navbar />
+        <div className="max-w-xl mx-auto px-4 py-16 flex-1 flex flex-col justify-center items-center text-center">
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-6 shadow-xl shadow-amber-500/5">
+            <Shield className="h-12 w-12 mx-auto" />
+          </div>
+
+          <span className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase tracking-wider mb-3">
+            Secretariat Access Restricted
+          </span>
+
+          <h1 className="text-2xl sm:text-3xl font-black text-white mb-3 tracking-tight">
+            Admin Account Only
+          </h1>
+
+          <p className="text-sm text-slate-300 mb-8 max-w-md leading-relaxed">
+            {isDelegate ? (
+              <>
+                You are currently signed in as <strong className="text-cyan-300">{user?.name}</strong> (<em>Distinguished Delegate</em>). The Secretariat Oversight and Admin modules are exclusively accessible to authorized Secretariat Administrators.
+              </>
+            ) : (
+              <>
+                This administrative module is restricted to authorized Secretariat Administrators and Executive Board Chairs. Please sign in with an Admin account to proceed.
+              </>
+            )}
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full max-w-sm">
+            {isDelegate ? (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="w-full py-3 px-4 rounded-xl bg-cyan-300 text-slate-950 font-bold text-xs sm:text-sm hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                <span>Go to Delegate Dashboard</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/auth')}
+                className="w-full py-3 px-4 rounded-xl bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm hover:bg-amber-300 transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+              >
+                <span>Sign In to Admin Account</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="delegate-page min-h-screen text-slate-100 pt-24 pb-16 flex flex-col selection:bg-cyan-500/20 selection:text-cyan-200">
