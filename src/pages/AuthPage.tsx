@@ -54,11 +54,15 @@ export default function AuthPage() {
   const [country, setCountry] = useState('United States');
   const [committee, setCommittee] = useState('UN Security Council (UNSC)');
 
-  // Cloudflare Captcha States
-  const [loginCaptchaVerified, setLoginCaptchaVerified] = useState(true);
-  const [loginCaptchaToken, setLoginCaptchaToken] = useState<string | null>('cf_auto_token');
-  const [regCaptchaVerified, setRegCaptchaVerified] = useState(true);
-  const [regCaptchaToken, setRegCaptchaToken] = useState<string | null>('cf_auto_token');
+  // Cloudflare Captcha States (Strictly unverified by default - no account access without captcha)
+  const [loginCaptchaVerified, setLoginCaptchaVerified] = useState(false);
+  const [loginCaptchaToken, setLoginCaptchaToken] = useState<string | null>(null);
+  const [regCaptchaVerified, setRegCaptchaVerified] = useState(false);
+  const [regCaptchaToken, setRegCaptchaToken] = useState<string | null>(null);
+  const [forgotCaptchaVerified, setForgotCaptchaVerified] = useState(false);
+  const [forgotCaptchaToken, setForgotCaptchaToken] = useState<string | null>(null);
+  const [resetCaptchaVerified, setResetCaptchaVerified] = useState(false);
+  const [resetCaptchaToken, setResetCaptchaToken] = useState<string | null>(null);
 
   // Password Reset & Email Code State
   const [resetEmail, setResetEmail] = useState(emailParam || '');
@@ -172,6 +176,11 @@ export default function AuthPage() {
       return;
     }
 
+    if (/^\d+$/.test(name.trim())) {
+      setFeedback({ text: 'Please enter your full diplomat name or chosen name, not a numeric user ID.', type: 'error' });
+      return;
+    }
+
     setLoading(true);
     const res = await register({
       name,
@@ -179,8 +188,6 @@ export default function AuthPage() {
       password,
       role: 'DELEGATE',
       title: 'Distinguished Delegate',
-      country,
-      committee,
     });
     setLoading(false);
 
@@ -199,6 +206,14 @@ export default function AuthPage() {
   const handleRequestEmailCode = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setFeedback(null);
+
+    if (!forgotCaptchaVerified) {
+      setFeedback({
+        text: 'Security check required: Please complete the Cloudflare security verification before requesting an email code.',
+        type: 'error',
+      });
+      return;
+    }
 
     const targetEmail = (resetEmail || email).trim();
     if (!targetEmail || !/^\S+@\S+\.\S+$/.test(targetEmail)) {
@@ -227,6 +242,7 @@ export default function AuthPage() {
       });
     } else {
       setFeedback({ text: res.error || 'Failed to dispatch email verification code.', type: 'error' });
+      setForgotCaptchaVerified(false);
     }
   };
 
@@ -234,6 +250,14 @@ export default function AuthPage() {
   const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
+
+    if (!resetCaptchaVerified) {
+      setFeedback({
+        text: 'Security check required: Please complete the Cloudflare security verification before setting a new password.',
+        type: 'error',
+      });
+      return;
+    }
 
     if (newPassword !== confirmNewPassword) {
       setFeedback({ text: 'New passwords do not match. Please verify.', type: 'error' });
@@ -263,10 +287,20 @@ export default function AuthPage() {
       }, 900);
     } else {
       setFeedback({ text: res.error || 'Password reset failed. Invalid or expired code.', type: 'error' });
+      setResetCaptchaVerified(false);
     }
   };
 
   const handleGoogleOAuth = async () => {
+    setFeedback(null);
+    if (!loginCaptchaVerified) {
+      setFeedback({
+        text: 'Security check required: Please complete the Cloudflare security verification before continuing with Google Single Sign-On.',
+        type: 'error',
+      });
+      return;
+    }
+
     setLoading(true);
     const res = await oauthGoogle();
     setLoading(false);
@@ -282,6 +316,9 @@ export default function AuthPage() {
           navigate('/dashboard');
         }
       }, 700);
+    } else {
+      setFeedback({ text: res.error || 'Google authentication failed.', type: 'error' });
+      setLoginCaptchaVerified(false);
     }
   };
 
@@ -546,8 +583,9 @@ export default function AuthPage() {
                 <button
                   type="button"
                   onClick={handleGoogleOAuth}
-                  disabled={loading}
-                  className="w-full mt-2 py-2.5 px-4 rounded-xl border border-white/15 bg-slate-900/80 hover:bg-slate-800/80 text-white text-xs sm:text-sm font-semibold transition flex items-center justify-center gap-2.5 shadow"
+                  disabled={loading || !loginCaptchaVerified}
+                  title={!loginCaptchaVerified ? 'Complete Cloudflare verification to proceed' : 'Continue with Google Single Sign-On'}
+                  className="w-full mt-2 py-2.5 px-4 rounded-xl border border-white/15 bg-slate-900/80 hover:bg-slate-800/80 text-white text-xs sm:text-sm font-semibold transition flex items-center justify-center gap-2.5 shadow disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24">
                     <path
@@ -614,43 +652,6 @@ export default function AuthPage() {
                       className="w-full rounded-xl border border-white/15 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
                     />
                   </div>
-                </div>
-              </div>
-
-              {/* Delegate Representation Fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Country Representation
-                  </label>
-                  <div className="relative">
-                    <Flag className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                    <input
-                      required
-                      type="text"
-                      value={country}
-                      onChange={(e) => setCountry(e.target.value)}
-                      placeholder="e.g. France, Japan, Brazil"
-                      className="w-full rounded-xl border border-white/15 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Assigned Committee
-                  </label>
-                  <select
-                    value={committee}
-                    onChange={(e) => setCommittee(e.target.value)}
-                    className="w-full rounded-xl border border-white/15 bg-slate-950/80 px-3 py-2.5 text-xs sm:text-sm text-white focus:border-cyan-300 focus:outline-none"
-                  >
-                    <option value="UN Security Council (UNSC)">UN Security Council (UNSC)</option>
-                    <option value="UN Human Rights Council (UNHRC)">UN Human Rights Council (UNHRC)</option>
-                    <option value="General Assembly (DISEC)">General Assembly (DISEC)</option>
-                    <option value="Crisis Simulation Committee">Crisis Simulation Committee</option>
-                    <option value="UN Environment Programme (UNEP)">UN Environment Programme (UNEP)</option>
-                  </select>
                 </div>
               </div>
 
@@ -776,11 +777,30 @@ export default function AuthPage() {
                   </p>
                 </div>
 
+                {/* Cloudflare Captcha in Forgot Password */}
+                <div className="space-y-1">
+                  <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                    <Shield className="h-3 w-3 text-cyan-400" />
+                    Cloudflare Security Verification
+                  </span>
+                  <CloudflareCaptcha
+                    isVerified={forgotCaptchaVerified}
+                    onVerify={(token) => {
+                      setForgotCaptchaVerified(true);
+                      setForgotCaptchaToken(token);
+                    }}
+                    onExpire={() => {
+                      setForgotCaptchaVerified(false);
+                      setForgotCaptchaToken(null);
+                    }}
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <button
                     type="submit"
-                    disabled={isRegeneratingCode}
-                    className="flex-1 rounded-xl bg-cyan-300 py-3 text-xs sm:text-sm font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                    disabled={isRegeneratingCode || !forgotCaptchaVerified}
+                    className="flex-1 rounded-xl bg-cyan-300 py-3 text-xs sm:text-sm font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {isRegeneratingCode ? (
                       <RefreshCw className="h-4 w-4 animate-spin" />
@@ -932,6 +952,25 @@ export default function AuthPage() {
                 </div>
               )}
 
+              {/* Cloudflare Captcha in Reset Password */}
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                  <Shield className="h-3 w-3 text-cyan-400" />
+                  Cloudflare Security Verification
+                </span>
+                <CloudflareCaptcha
+                  isVerified={resetCaptchaVerified}
+                  onVerify={(token) => {
+                    setResetCaptchaVerified(true);
+                    setResetCaptchaToken(token);
+                  }}
+                  onExpire={() => {
+                    setResetCaptchaVerified(false);
+                    setResetCaptchaToken(null);
+                  }}
+                />
+              </div>
+
               <div className="flex items-center justify-between gap-2 pt-1">
                 <button
                   type="button"
@@ -943,8 +982,8 @@ export default function AuthPage() {
 
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="rounded-xl bg-emerald-400 px-6 py-3 text-xs sm:text-sm font-bold text-slate-950 hover:bg-emerald-300 transition shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                  disabled={loading || !resetCaptchaVerified}
+                  className="rounded-xl bg-emerald-400 px-6 py-3 text-xs sm:text-sm font-bold text-slate-950 hover:bg-emerald-300 transition shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />

@@ -24,11 +24,16 @@ import {
   ExternalLink,
   Shield,
   ArrowRight,
+  LayoutDashboard,
+  LogIn,
+  User,
 } from 'lucide-react';
 import { StaffAccount, MeetingRoom } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 export default function AdminPage() {
   const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
   const [activeModal, setActiveModal] = useState<'MEETING' | 'STAFF' | 'ROSTER' | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
@@ -219,7 +224,31 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center flex-wrap gap-2">
+          {isAuthenticated && user ? (
+            <div className="flex items-center gap-2">
+              <Link
+                to="/dashboard"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-950/40 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-900/50 transition"
+              >
+                <LayoutDashboard className="h-3.5 w-3.5" />
+                <span>Delegate Dashboard</span>
+              </Link>
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span>{user.name || 'Delegate'} ({user.role})</span>
+              </div>
+            </div>
+          ) : (
+            <Link
+              to="/auth"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-300 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-sm"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              <span>Delegate / Staff Sign In</span>
+            </Link>
+          )}
+
           <button
             onClick={() => navigate('/admin/search')}
             aria-label="Search records"
@@ -235,13 +264,18 @@ export default function AdminPage() {
             <Bell className="w-4 h-4" />
             <span className="w-2 h-2 bg-cyan-400 rounded-full absolute top-1.5 right-1.5" />
           </button>
-          <Link
-            to="/auth"
-            className="p-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-rose-400 rounded-full transition"
-            title="Sign out"
-          >
-            <LogOut className="w-4 h-4" />
-          </Link>
+          {isAuthenticated && (
+            <button
+              onClick={() => {
+                logout();
+                navigate('/auth');
+              }}
+              className="p-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-rose-400 rounded-full transition"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </header>
 

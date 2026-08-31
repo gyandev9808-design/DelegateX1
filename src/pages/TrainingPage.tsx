@@ -13,6 +13,7 @@ import {
   Sparkles,
   ExternalLink,
   Bot,
+  Sliders,
 } from 'lucide-react';
 
 interface ModuleDetail {
@@ -123,7 +124,14 @@ export default function TrainingPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/admin/rop-config"
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-900 px-3.5 py-2 text-xs font-semibold text-cyan-300 hover:bg-slate-800 transition"
+            >
+              <Sliders className="h-3.5 w-3.5" />
+              <span>Configure RoP Rules</span>
+            </Link>
             <Link
               to="/ai-doubt-clarifier"
               className="flex items-center gap-1.5 rounded-full bg-cyan-300 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-md shadow-cyan-500/20"

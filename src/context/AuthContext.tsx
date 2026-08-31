@@ -42,6 +42,7 @@ interface AuthContextType {
     newPassword: string,
     email?: string
   ) => Promise<{ success: boolean; error?: string; user?: User }>;
+  updateProfile: (updatedData: { name?: string; title?: string; country?: string; committee?: string }) => Promise<{ success: boolean; error?: string; user?: User }>;
   logout: () => void;
 }
 
@@ -460,6 +461,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateProfile = async (updatedData: { name?: string; title?: string; country?: string; committee?: string }) => {
+    try {
+      const storedToken = localStorage.getItem('mun_jwt_token');
+      const res = await fetch('/api/auth/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(storedToken ? { Authorization: `Bearer ${storedToken}` } : {}),
+        },
+        body: JSON.stringify(updatedData),
+      });
+      const { ok, data } = await parseResponseSafely(res);
+      if (ok && data.user) {
+        saveAuthSession(data.token || storedToken || 'jwt_session', data.user);
+        return { success: true, user: data.user };
+      }
+      // Fallback update in local state
+      if (user) {
+        const localUpdated: User = {
+          ...user,
+          name: updatedData.name?.trim() || user.name,
+          title: updatedData.title?.trim() || user.title,
+          country: updatedData.country?.trim() || user.country,
+          committee: updatedData.committee?.trim() || user.committee,
+        };
+        saveAuthSession(storedToken || 'jwt_session', localUpdated);
+        return { success: true, user: localUpdated };
+      }
+      return { success: false, error: data?.error || 'Could not update profile.' };
+    } catch (err: any) {
+      if (user) {
+        const storedToken = localStorage.getItem('mun_jwt_token');
+        const localUpdated: User = {
+          ...user,
+          name: updatedData.name?.trim() || user.name,
+          title: updatedData.title?.trim() || user.title,
+          country: updatedData.country?.trim() || user.country,
+          committee: updatedData.committee?.trim() || user.committee,
+        };
+        saveAuthSession(storedToken || 'jwt_session', localUpdated);
+        return { success: true, user: localUpdated };
+      }
+      return { success: false, error: err?.message || 'Update failed.' };
+    }
+  };
+
   const logout = () => {
     fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     localStorage.removeItem('mun_jwt_token');
@@ -492,6 +539,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         forgotPassword,
         verifyResetToken,
         resetPassword,
+        updateProfile,
         logout,
       }}
     >

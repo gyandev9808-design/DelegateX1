@@ -202,18 +202,6 @@ const seedAccounts: Array<Omit<StoredUser, 'passwordHash'> & { passwordPlain: st
     passwordPlain: 'AdminPassword2026!',
     createdAt: Date.now(),
   },
-  {
-    id: 'delegate_alex_05',
-    name: 'Alex Rivera',
-    email: 'alex.delegate@delegatex.org',
-    role: 'DELEGATE',
-    title: 'Distinguished Delegate',
-    country: 'France',
-    committee: 'UN Security Council (UNSC)',
-    avatarColor: 'from-blue-500 to-cyan-600',
-    passwordPlain: 'Delegate2026!',
-    createdAt: Date.now(),
-  },
 ];
 
 seedAccounts.forEach((acc) => {
@@ -292,7 +280,93 @@ app.get('/api/auth/me', (req, res) => {
   }
 });
 
-// POST /api/auth/register - Secure Registration with Bcrypt & JWT
+// POST /api/auth/profile - Update user profile (e.g. name / username)
+app.post('/api/auth/profile', authenticateJwtMiddleware, (req, res) => {
+  try {
+    const authUser = (req as any).user;
+    const { name, title, country, committee } = req.body;
+    const emailKey = authUser.email?.toLowerCase();
+
+    let existing = accountsStore.get(emailKey);
+    if (!existing) {
+      existing = {
+        id: authUser.id || 'usr_' + Date.now(),
+        name: name?.trim() || authUser.name || 'Delegate',
+        email: emailKey,
+        role: authUser.role || 'DELEGATE',
+        title: title || authUser.title || 'Distinguished Delegate',
+        country: country || authUser.country || 'United States',
+        committee: committee || authUser.committee || 'UN Security Council (UNSC)',
+        passwordHash: '',
+        createdAt: Date.now(),
+      };
+    } else {
+      if (name && typeof name === 'string' && name.trim().length >= 1) {
+        existing.name = name.trim();
+      }
+      if (title && typeof title === 'string') {
+        existing.title = title.trim();
+      }
+      if (country && typeof country === 'string') {
+        existing.country = country.trim();
+      }
+      if (committee && typeof committee === 'string') {
+        existing.committee = committee.trim();
+      }
+    }
+
+    accountsStore.set(emailKey, existing);
+    const newToken = generateJwtToken(existing);
+
+    return res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      token: newToken,
+      user: {
+        id: existing.id,
+        name: existing.name,
+        email: existing.email,
+        role: existing.role,
+        title: existing.title,
+        country: existing.country,
+        committee: existing.committee,
+        avatarColor: existing.avatarColor,
+        createdAt: existing.createdAt,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update profile.' });
+  }
+});
+
+// Helper to remove all accounts with DELEGATE role
+const purgeAllDelegateAccounts = () => {
+  let count = 0;
+  for (const [email, account] of accountsStore.entries()) {
+    if (account.role === 'DELEGATE') {
+      accountsStore.delete(email);
+      count++;
+    }
+  }
+  return count;
+};
+
+// Initial purge of all delegate accounts
+purgeAllDelegateAccounts();
+
+// POST /api/auth/purge-delegates - Purge all delegate accounts from system
+app.post('/api/auth/purge-delegates', (req, res) => {
+  try {
+    const deletedCount = purgeAllDelegateAccounts();
+    return res.json({
+      success: true,
+      message: `Successfully removed all ${deletedCount} delegate accounts from the system.`,
+      deletedCount,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to purge delegate accounts.' });
+  }
+});
 app.post('/api/auth/register', (req, res) => {
   try {
     const { name, email, password, role, title, country, committee } = req.body;

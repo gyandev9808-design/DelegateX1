@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import {
   Bot,
@@ -15,7 +15,14 @@ import {
   ArrowLeft,
   Loader2,
   RefreshCw,
+  LogIn,
+  UserCheck,
+  Lock,
+  X,
+  UserPlus,
+  LayoutDashboard,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface ClarificationItem {
   id: string;
@@ -26,10 +33,14 @@ interface ClarificationItem {
 }
 
 export default function AiDoubtClarifierPage() {
+  const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState('');
 
   const [history, setHistory] = useState<ClarificationItem[]>([
     {
@@ -53,6 +64,13 @@ export default function AiDoubtClarifierPage() {
   const handleAsk = async (questionToAsk?: string) => {
     const query = (questionToAsk ?? input).trim();
     if (!query || isLoading) return;
+
+    // Check if user is authenticated
+    if (!isAuthenticated || !user) {
+      setPendingQuestion(query);
+      setShowAuthModal(true);
+      return;
+    }
 
     setError('');
     setIsLoading(true);
@@ -104,17 +122,18 @@ export default function AiDoubtClarifierPage() {
       <Navbar />
 
       <main className="max-w-4xl mx-auto px-5 py-10 flex-1 w-full space-y-8">
-        {/* Header Title */}
+        {/* Header Title & Auth Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
           <div className="flex items-center space-x-3">
             <Link
               to="/dashboard"
               className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition"
+              title="Return to Dashboard"
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
                   AI Doubt Clarifier
                 </h1>
@@ -128,7 +147,54 @@ export default function AiDoubtClarifierPage() {
               </p>
             </div>
           </div>
+
+          {/* Authentication Status Badge or Sign In CTA */}
+          <div className="flex items-center gap-2.5">
+            {isAuthenticated && user ? (
+              <div className="flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-950/40 px-3.5 py-2 text-xs">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="flex flex-col">
+                  <span className="font-bold text-cyan-200 leading-tight">
+                    {user.name || 'Delegate'}
+                  </span>
+                  <span className="text-[10px] text-cyan-400/80">Authorized {user.role}</span>
+                </div>
+              </div>
+            ) : (
+              <Link
+                to="/auth"
+                className="inline-flex items-center gap-2 rounded-xl bg-cyan-300 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-md shadow-cyan-500/20"
+              >
+                <LogIn className="h-4 w-4" />
+                <span>Sign In to Access Tool</span>
+              </Link>
+            )}
+          </div>
         </div>
+
+        {/* Unauthenticated Notification Banner */}
+        {!isAuthenticated && (
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-950/20 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-300 shrink-0">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white">Delegate Sign-In Required</h4>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Sign in or create a free delegate account to unlock unlimited AI clarifications, foreign policy prompts, and RoP analysis.
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/auth"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-300 transition shrink-0 whitespace-nowrap"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Sign In Now</span>
+            </Link>
+          </div>
+        )}
 
         {/* Question Input Box */}
         <div className="delegate-panel rounded-3xl p-5 sm:p-7 shadow-2xl">
@@ -286,6 +352,56 @@ export default function AiDoubtClarifierPage() {
           </Link>
         </div>
       </main>
+
+      {/* Sign-In Gate Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-3xl border border-cyan-400/30 bg-slate-900 p-6 sm:p-8 shadow-2xl space-y-6">
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-5 right-5 p-1 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col items-center text-center space-y-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-400/10 text-cyan-300 border border-cyan-400/30">
+                <Lock className="w-7 h-7" />
+              </div>
+              <h3 className="text-xl font-extrabold text-white">
+                Sign In to Access AI Clarifier
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-xs">
+                To submit custom queries, consult parliamentary rules, and generate AI speeches, please sign in with your Delegate account.
+              </p>
+            </div>
+
+            {pendingQuestion && (
+              <div className="p-3 rounded-xl bg-slate-950 border border-white/10 text-xs text-slate-300">
+                <span className="text-[10px] font-bold uppercase text-cyan-400 block mb-1">Your Question</span>
+                &quot;{pendingQuestion}&quot;
+              </div>
+            )}
+
+            <div className="space-y-3 pt-2">
+              <Link
+                to="/auth"
+                className="flex items-center justify-center gap-2 w-full rounded-xl bg-cyan-300 py-3 text-sm font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Sign In to Continue</span>
+              </Link>
+              <Link
+                to="/auth"
+                className="flex items-center justify-center gap-2 w-full rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-semibold text-slate-200 hover:bg-white/10 hover:text-white transition"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Create Free Delegate Account</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
