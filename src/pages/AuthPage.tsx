@@ -214,21 +214,18 @@ export default function AuthPage() {
     setIsRegeneratingCode(false);
 
     if (res.success) {
-      const freshCode = res.resetCode || '';
-      const freshToken = res.resetToken || '';
       const timeStamp = res.generatedAt || new Date().toLocaleTimeString();
 
       setEmailCodeInfo({
-        token: freshToken,
-        code: freshCode,
+        token: '',
+        code: '',
         email: targetEmail,
         recipient: targetEmail,
-        link: res.previewInfo?.resetLink || `/auth?mode=reset&token=${freshToken}&email=${encodeURIComponent(targetEmail)}`,
+        link: '',
         generatedAt: timeStamp,
       });
-      setResetTokenInput(freshCode || freshToken);
       setFeedback({
-        text: `Fresh verification code generated and sent directly to ${targetEmail} at ${timeStamp}. Previous codes have been invalidated.`,
+        text: `A fresh 6-digit verification code has been dispatched directly to ${targetEmail}. Please check your email inbox (and spam folder).`,
         type: 'info',
       });
     } else {
@@ -373,14 +370,8 @@ export default function AuthPage() {
         <div className="delegate-panel rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
           {/* Header */}
           <div className="text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/10 text-cyan-300 border border-cyan-400/20 shadow-md shadow-cyan-500/10">
-              {mode === 'RESET' || mode === 'FORGOT' ? (
-                <KeyRound className="h-6 w-6" />
-              ) : mode === 'REGISTER' ? (
-                <UserIcon className="h-6 w-6" />
-              ) : (
-                <Globe2 className="h-6 w-6" />
-              )}
+            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-cyan-400/40 bg-cyan-400/10 text-cyan-300 shadow-lg shadow-cyan-500/20 overflow-hidden">
+              <img src="/delegatex_logo.jpg" alt="DelegateX Logo" className="h-full w-full object-cover" />
             </div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">
               {mode === 'LOGIN' && 'Sign In to DelegateX'}
@@ -806,56 +797,36 @@ export default function AuthPage() {
                 </div>
               </form>
 
-              {/* Direct Email Delivery & Fresh Code Simulator Panel */}
+              {/* Direct Email Delivery Notice */}
               {emailCodeInfo && (
                 <div className="p-4 rounded-2xl border border-cyan-400/40 bg-slate-950/95 space-y-3 shadow-2xl">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg bg-cyan-400/20 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
-                        <Inbox className="h-4 w-4" />
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-8 w-8 rounded-xl bg-cyan-400/20 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
+                        <Mail className="h-4 w-4" />
                       </div>
                       <div>
-                        <span className="text-xs font-bold text-white block">Direct Email Delivery</span>
-                        <span className="text-[10px] text-emerald-400">Dispatched directly to {emailCodeInfo.recipient}</span>
+                        <span className="text-xs font-bold text-white block">Verification Code Sent</span>
+                        <span className="text-[11px] text-emerald-400 font-mono">Dispatched to {emailCodeInfo.recipient}</span>
                       </div>
                     </div>
                     <span className="text-[10px] font-mono text-cyan-300 bg-cyan-400/10 px-2 py-0.5 rounded-full border border-cyan-400/20">
-                      Generated at {emailCodeInfo.generatedAt}
+                      {emailCodeInfo.generatedAt}
                     </span>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-slate-900 border border-white/10 space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-cyan-400/30 font-mono">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block uppercase tracking-wider">
-                          Fresh 6-Digit Verification Code:
-                        </span>
-                        <span className="text-xl font-extrabold text-cyan-300 tracking-widest">
-                          {emailCodeInfo.code}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => copyText(emailCodeInfo.code, 'otp')}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 flex items-center gap-1 transition"
-                        >
-                          {copiedKey === 'otp' ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                          <span>Copy</span>
-                        </button>
-                      </div>
-                    </div>
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-white/10 space-y-3 text-xs">
+                    <p className="text-slate-300 leading-relaxed">
+                      We have sent a single-use 6-digit security code directly to your email address. Please open your email inbox, copy the code, and enter it below.
+                    </p>
 
                     <div className="flex flex-wrap gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => {
-                          setMode('RESET');
-                          setResetTokenInput(emailCodeInfo.code);
-                        }}
-                        className="flex-1 py-2 px-3 rounded-xl bg-cyan-300 hover:bg-cyan-200 text-slate-950 text-xs font-bold transition text-center shadow"
+                        onClick={() => setMode('RESET')}
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-cyan-300 hover:bg-cyan-200 text-slate-950 text-xs font-bold transition text-center shadow"
                       >
-                        Enter New Password with this Code →
+                        Enter 6-Digit Code & Set Password →
                       </button>
 
                       {/* Regenerate Fresh Code Button */}
@@ -866,7 +837,7 @@ export default function AuthPage() {
                         className="py-2 px-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition"
                       >
                         <RotateCcw className={`h-3.5 w-3.5 text-cyan-300 ${isRegeneratingCode ? 'animate-spin' : ''}`} />
-                        <span>Regenerate Fresh Code</span>
+                        <span>Resend Code</span>
                       </button>
                     </div>
                   </div>

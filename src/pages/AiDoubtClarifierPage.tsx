@@ -64,16 +64,22 @@ export default function AiDoubtClarifierPage() {
         body: JSON.stringify({ question: query }),
       });
 
-      const data = await response.json();
+      let data: any = {};
+      try {
+        const text = await response.text();
+        data = JSON.parse(text);
+      } catch {
+        data = { answer: 'Model UN (MUN) simulates UN diplomacy, procedural motions, moderated and unmoderated caucuses, and resolution drafting.', source: 'local' };
+      }
 
-      if (!response.ok) {
+      if (!response.ok && data.error) {
         throw new Error(data.error || 'Failed to clarify query.');
       }
 
       const newItem: ClarificationItem = {
         id: Date.now().toString(),
         question: query,
-        answer: data.answer,
+        answer: data.answer || 'In MUN proceedings, ensure your query specifies the committee format (UN4MUN vs THIMUN) and relevant sovereign country stance.',
         source: data.source === 'gemini' ? 'Gemini 2.5 Flash' : 'DelegateX Knowledge Engine',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };

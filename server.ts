@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -15,6 +16,13 @@ const JWT_SECRET = process.env.JWT_SECRET || 'delegatex_super_secret_jwt_key_202
 const JWT_EXPIRES_IN = '7d';
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Force JSON header on /api routes
+app.use('/api', (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
 
 // Intelligent MUN fallback responses
 const getMunFallbackReply = (question: string) => {
@@ -538,8 +546,110 @@ app.post('/api/auth/oauth-google', (req, res) => {
   }
 });
 
-// POST /api/auth/forgot-password - Generate password reset token and verification code
-app.post('/api/auth/forgot-password', (req, res) => {
+// Helper function to dispatch verification email via Nodemailer (Gmail or Custom SMTP)
+async function sendVerificationEmail(toEmail: string, code: string, token: string): Promise<boolean> {
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const fromEmail = process.env.EMAIL_FROM || (gmailUser ? `DelegateX Security <${gmailUser}>` : 'DelegateX Security <no-reply@delegatex.org>');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0b0f17; color: #f1f5f9; padding: 20px; }
+          .card { max-width: 540px; margin: 0 auto; background-color: #111827; border: 1px solid #1f2937; border-radius: 20px; padding: 32px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }
+          .header { text-align: center; margin-bottom: 24px; }
+          .logo { font-size: 24px; font-weight: 800; color: #67e8f9; letter-spacing: -0.5px; }
+          .sub { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+          .code-box { background: #0f172a; border: 1px solid #06b6d4; border-radius: 14px; padding: 24px; text-align: center; margin: 24px 0; }
+          .code { font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #22d3ee; font-family: monospace; }
+          .expiry { font-size: 12px; color: #94a3b8; margin-top: 10px; }
+          .footer { margin-top: 32px; border-top: 1px solid #1f2937; padding-top: 16px; font-size: 11px; color: #64748b; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="header">
+            <div class="logo">DelegateX Security</div>
+            <div class="sub">Model UN Diplomatic Intelligence & Chambers</div>
+          </div>
+          <p style="font-size: 15px; color: #e2e8f0; line-height: 1.5;">Hello Diplomat,</p>
+          <p style="font-size: 14px; color: #94a3b8; line-height: 1.6;">
+            We received a request to verify your account credentials. Please enter the following 6-digit verification code into the application:
+          </p>
+          <div class="code-box">
+            <div class="code">${code}</div>
+            <div class="expiry">Expires in 15 minutes • Single-use code</div>
+          </div>
+          <p style="font-size: 13px; color: #94a3b8; line-height: 1.5;">
+            If you did not request this verification code, please ignore this email or reset your password immediately.
+          </p>
+          <div class="footer">
+            © 2026 DelegateX MUN Security Verification Dispatch. Sent to ${toEmail}.
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  if (gmailUser && gmailPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: gmailUser,
+          pass: gmailPass,
+        },
+      });
+      await transporter.sendMail({
+        from: fromEmail,
+        to: toEmail,
+        subject: `[DelegateX] Your Verification Code is ${code}`,
+        text: `Your DelegateX verification code is: ${code}. This code expires in 15 minutes.`,
+        html: htmlContent,
+      });
+      console.log(`[EMAIL DISPATCH] Successfully sent email to ${toEmail} via Gmail.`);
+      return true;
+    } catch (e) {
+      console.error(`[EMAIL DISPATCH ERROR] Failed to send via Gmail SMTP:`, e);
+    }
+  } else if (smtpHost && smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+      await transporter.sendMail({
+        from: fromEmail,
+        to: toEmail,
+        subject: `[DelegateX] Your Verification Code is ${code}`,
+        text: `Your DelegateX verification code is: ${code}. This code expires in 15 minutes.`,
+        html: htmlContent,
+      });
+      console.log(`[EMAIL DISPATCH] Successfully sent email to ${toEmail} via custom SMTP.`);
+      return true;
+    } catch (e) {
+      console.error(`[EMAIL DISPATCH ERROR] Failed to send via custom SMTP:`, e);
+    }
+  } else {
+    console.log(`[EMAIL DISPATCH TO ${toEmail}] Fresh verification code: ${code} generated at ${new Date().toISOString()}`);
+  }
+  return false;
+}
+
+// POST /api/auth/forgot-password - Generate password reset token and verification code sent to email
+app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -588,20 +698,15 @@ app.post('/api/auth/forgot-password', (req, res) => {
 
     const generatedTime = new Date().toLocaleTimeString();
 
+    // Dispatch email directly to the recipient without leaking the code to client response
+    await sendVerificationEmail(cleanEmail, resetCode, resetToken);
+
     return res.json({
-      message: `Fresh verification code generated and sent directly to ${cleanEmail}.`,
-      resetToken,
-      resetCode,
+      success: true,
+      message: `A fresh 6-digit verification code has been dispatched directly to ${cleanEmail}. Please check your email inbox (including Spam/Junk folder).`,
       email: cleanEmail,
       expiresInMinutes: 15,
       generatedAt: generatedTime,
-      previewInfo: {
-        subject: `[DelegateX] Your Verification Code is ${resetCode}`,
-        resetLink: `/auth?mode=reset&token=${resetToken}&email=${encodeURIComponent(cleanEmail)}`,
-        verificationCode: resetCode,
-        recipient: cleanEmail,
-        timestamp: generatedTime,
-      },
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to initiate password reset.' });
@@ -609,7 +714,7 @@ app.post('/api/auth/forgot-password', (req, res) => {
 });
 
 // POST /api/auth/send-email-code - Explicit email code dispatcher with fresh code regeneration every time
-app.post('/api/auth/send-email-code', (req, res) => {
+app.post('/api/auth/send-email-code', async (req, res) => {
   try {
     const { email, purpose } = req.body;
     const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -628,7 +733,7 @@ app.post('/api/auth/send-email-code', (req, res) => {
     // Fresh regenerated 6-digit code
     const freshCode = Math.floor(100000 + Math.random() * 900000).toString();
     const freshToken = 'eml_code_' + crypto.randomBytes(18).toString('hex');
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
 
     const entry: PasswordResetEntry = {
       token: freshToken,
@@ -643,21 +748,16 @@ app.post('/api/auth/send-email-code', (req, res) => {
 
     const generatedTime = new Date().toLocaleTimeString();
 
+    // Dispatch email directly
+    await sendVerificationEmail(cleanEmail, freshCode, freshToken);
+
     return res.json({
       success: true,
-      message: `A fresh single-use verification code has been generated and sent to ${cleanEmail}.`,
-      code: freshCode,
-      token: freshToken,
+      message: `A fresh single-use verification code has been generated and dispatched directly to ${cleanEmail}. Please check your email inbox.`,
       email: cleanEmail,
       purpose: purpose || 'Verification',
-      expiresInMinutes: 10,
+      expiresInMinutes: 15,
       generatedAt: generatedTime,
-      previewInfo: {
-        subject: `[DelegateX Security] Verification Code: ${freshCode}`,
-        recipient: cleanEmail,
-        verificationCode: freshCode,
-        timestamp: generatedTime,
-      },
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to send verification email code.' });

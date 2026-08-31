@@ -75,6 +75,18 @@ export default function HomePage() {
         {/* HERO SECTION */}
         <section className="relative overflow-hidden px-5 pt-32 pb-20 sm:px-8 sm:pt-40 sm:pb-28">
           <div className="mx-auto max-w-5xl text-center">
+            {/* Official DelegateX Profile Logo Emblem */}
+            <div className="flex justify-center mb-6">
+              <div className="relative group">
+                <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 opacity-70 blur-md group-hover:opacity-100 transition duration-500"></div>
+                <img
+                  src="/delegatex_logo.jpg"
+                  alt="DelegateX Official Emblem"
+                  className="relative h-28 w-28 rounded-full border-2 border-cyan-400/50 shadow-2xl object-cover"
+                />
+              </div>
+            </div>
+
             {/* Top pill badge */}
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-1.5 text-xs font-semibold text-cyan-300 shadow-lg shadow-cyan-500/10 backdrop-blur-md">
               <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -93,26 +105,19 @@ export default function HomePage() {
               Master Rules of Procedure, receive admin-allocated country portfolios, and run live interactive floor simulations.
             </p>
 
-            {/* CTA buttons: Register Now, Start Live Meet, and How Does It Work */}
+            {/* CTA buttons: Register Now and How It Works */}
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
               <Link
-                to="/meet"
-                className="flex items-center gap-2 rounded-full bg-cyan-300 px-7 py-3.5 text-sm font-bold text-slate-950 shadow-xl shadow-cyan-500/25 transition hover:bg-cyan-200 hover:scale-105 active:scale-95"
-              >
-                <Video className="h-4 w-4" />
-                <span>{isAdmin ? 'Host Live Meet' : 'Join Live Meet'}</span>
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
                 to="/auth?mode=register"
-                className="flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-7 py-3.5 text-sm font-semibold text-cyan-300 backdrop-blur-sm transition hover:bg-cyan-400/20"
+                className="flex items-center gap-2 rounded-full bg-cyan-300 px-8 py-3.5 text-sm font-bold text-slate-950 shadow-xl shadow-cyan-500/25 transition hover:bg-cyan-200 hover:scale-105 active:scale-95"
               >
                 <UserPlus className="h-4 w-4" />
-                <span>Register Now</span>
+                <span>Register as Delegate</span>
+                <ArrowRight className="h-4 w-4" />
               </Link>
               <a
                 href="#how-it-works"
-                className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/10 hover:border-cyan-400/40"
+                className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-7 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/10 hover:border-cyan-400/40"
               >
                 <HelpCircle className="h-4 w-4 text-slate-400" />
                 <span>How It Works</span>
