@@ -92,10 +92,12 @@ export default function CommitteePage() {
       <header className="border-b border-white/10 bg-slate-950/80 px-4 sm:px-8 py-3.5 backdrop-blur-xl flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40">
         <div className="flex items-center space-x-3 sm:space-x-4">
           <Link
-            to="/"
-            className="text-slate-400 hover:text-white p-2 rounded-lg bg-slate-900 border border-slate-800 transition"
+            to="/dashboard"
+            title="Back to Delegate Dashboard"
+            className="flex items-center gap-1.5 text-slate-300 hover:text-white px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-400/40 transition text-xs font-semibold"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-4 h-4 text-cyan-300" />
+            <span className="hidden sm:inline">Dashboard</span>
           </Link>
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold rounded-md">

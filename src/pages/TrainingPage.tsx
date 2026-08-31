@@ -106,10 +106,12 @@ export default function TrainingPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
           <div className="flex items-center space-x-3">
             <Link
-              to="/"
-              className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition"
+              to="/dashboard"
+              title="Back to Delegate Dashboard"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-cyan-400/40 transition text-xs font-semibold"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4 text-cyan-300" />
+              <span className="hidden sm:inline">Back to Dashboard</span>
             </Link>
             <div>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
@@ -236,15 +238,16 @@ export default function TrainingPage() {
         {/* Bottom CTA to practice */}
         <div className="rounded-2xl border border-white/10 bg-slate-900/40 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            <h3 className="font-bold text-white text-base">Ready to put your training into action?</h3>
-            <p className="text-xs text-slate-400">Jump straight into the live floor timer or test questions in the AI Clarifier.</p>
+            <h3 className="font-bold text-white text-base">Have doubts about Rules of Procedure or Caucus Strategy?</h3>
+            <p className="text-xs text-slate-400">Ask the DelegateX AI Clarifier for instant assistance on diplomatic protocol and speech formats.</p>
           </div>
           <div className="flex gap-3">
             <Link
-              to="/committee"
-              className="rounded-full bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition"
+              to="/ai-doubt-clarifier"
+              className="flex items-center gap-2 rounded-full bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-md shadow-cyan-500/20"
             >
-              Enter Live Floor
+              <Bot className="h-4 w-4" />
+              <span>Ask AI Clarifier</span>
             </Link>
           </div>
         </div>
