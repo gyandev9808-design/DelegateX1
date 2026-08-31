@@ -34,7 +34,7 @@ import { useAuth } from '../context/AuthContext';
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
-  const [activeModal, setActiveModal] = useState<'MEETING' | 'STAFF' | 'ROSTER' | null>(null);
+  const [activeModal, setActiveModal] = useState<'MEETING' | 'STAFF' | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
 
@@ -76,62 +76,34 @@ export default function AdminPage() {
   const [meetings, setMeetings] = useState<MeetingRoom[]>([
     {
       id: '1',
-      code: 'UNSC-ARCTIC-2026',
+      code: 'unsc-2026',
       title: 'UNSC: Situation in Arctic',
       topic: 'Militarization & Navigation',
       type: 'LIVE_COMMITTEE',
-      googleMeetUrl: 'https://meet.google.com/qru-wspg-nzr',
     },
     {
       id: '2',
-      code: 'TRAIN-ROP-01',
+      code: 'train-rop-01',
       title: 'THIMUN RoP Masterclass',
       topic: 'Resolution Drafting',
       type: 'TRAINING',
-      googleMeetUrl: 'https://meet.google.com/qru-wspg-nzr',
     },
     {
       id: '3',
-      code: 'DISEC-DISARM-2026',
+      code: 'disec-2026',
       title: 'DISEC: Autonomous Weaponry',
       topic: 'AI Non-Proliferation',
       type: 'LIVE_COMMITTEE',
-      googleMeetUrl: 'https://meet.google.com/qru-wspg-nzr',
     },
   ]);
 
   const [newMeetingTitle, setNewMeetingTitle] = useState('');
   const [newMeetingTopic, setNewMeetingTopic] = useState('');
-  const [newMeetingUrl, setNewMeetingUrl] = useState('');
   const [newMeetingType, setNewMeetingType] = useState<'LIVE_COMMITTEE' | 'TRAINING'>('LIVE_COMMITTEE');
-
-  const [countries, setCountries] = useState<string[]>([
-    'United States of America',
-    'French Republic',
-    'United Kingdom',
-    'People\'s Republic of China',
-    'Russian Federation',
-    'Federal Republic of Germany',
-    'Federative Republic of Brazil',
-    'Republic of India',
-    'Japan',
-  ]);
-  const [newCountry, setNewCountry] = useState('');
 
   const handleCreateMeeting = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMeetingTitle.trim() || !newMeetingUrl.trim()) return;
-
-    try {
-      const parsedUrl = new URL(newMeetingUrl.trim());
-      if (parsedUrl.hostname !== 'meet.google.com' && !parsedUrl.hostname.includes('google.com')) {
-        showNotice('Please provide a valid Google Meet link (https://meet.google.com/...)');
-        return;
-      }
-    } catch {
-      showNotice('Please enter a valid meeting URL');
-      return;
-    }
+    if (!newMeetingTitle.trim()) return;
 
     const cleanTitlePrefix = newMeetingTitle.trim().substring(0, 4).toUpperCase().replace(/[^A-Z]/g, 'MUN');
     const generatedCode = `${cleanTitlePrefix.toLowerCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -142,7 +114,6 @@ export default function AdminPage() {
       title: newMeetingTitle.trim(),
       topic: newMeetingTopic.trim() || 'General Committee Debate',
       type: newMeetingType,
-      googleMeetUrl: newMeetingUrl.trim(),
     };
 
     // Register with server live room store
@@ -162,8 +133,15 @@ export default function AdminPage() {
     setMeetings([newMeeting, ...meetings]);
     setNewMeetingTitle('');
     setNewMeetingTopic('');
-    setNewMeetingUrl('');
     showNotice(`Meeting room created! Room code: ${generatedCode}`);
+  };
+
+  const handleDeleteMeeting = (id: string, code: string) => {
+    setMeetings((prev) => prev.filter((m) => m.id !== id));
+    fetch(`/api/rooms/${code}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+    showNotice(`Room code ${code} deleted.`);
   };
 
   const copyMeetingLink = (code: string) => {
@@ -198,14 +176,6 @@ export default function AdminPage() {
   const handleDeleteStaff = (id: string) => {
     setStaffList(staffList.filter((s) => s.id !== id));
     showNotice('Staff account removed.');
-  };
-
-  const handleAddCountry = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCountry.trim()) return;
-    setCountries([...countries, newCountry.trim()]);
-    setNewCountry('');
-    showNotice('Delegation added to roster.');
   };
 
   const isDelegate = isAuthenticated && user?.role === 'DELEGATE';
@@ -364,12 +334,12 @@ export default function AdminPage() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Left 2 Cols: Management Modules */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Recently Used Actions */}
+          {/* Core Secretariat Controls */}
           <section className="delegate-panel rounded-3xl p-6 shadow-xl">
             <h2 className="text-xs uppercase font-bold tracking-[0.22em] text-slate-300 mb-4">
               Core Secretariat Controls
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+            <div className="grid grid-cols-2 gap-4 text-center">
               <button
                 onClick={() => setActiveModal('MEETING')}
                 className="group flex flex-col items-center rounded-2xl p-4 transition hover:bg-slate-800/80 cursor-pointer"
@@ -388,26 +358,6 @@ export default function AdminPage() {
                   <UserPlus className="w-6 h-6" />
                 </div>
                 <span className="text-xs font-semibold text-slate-200 mt-2.5">Staff & EB</span>
-              </button>
-
-              <button
-                onClick={() => setActiveModal('ROSTER')}
-                className="group flex flex-col items-center rounded-2xl p-4 transition hover:bg-slate-800/80 cursor-pointer"
-              >
-                <div className="w-13 h-13 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-300 group-hover:scale-105 transition shadow-md">
-                  <Globe className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-semibold text-slate-200 mt-2.5">Country Roster</span>
-              </button>
-
-              <button
-                onClick={() => navigate('/admin/circulars')}
-                className="group flex flex-col items-center rounded-2xl p-4 transition hover:bg-slate-800/80 cursor-pointer"
-              >
-                <div className="w-13 h-13 rounded-2xl bg-indigo-400/10 border border-indigo-400/20 flex items-center justify-center text-indigo-300 group-hover:scale-105 transition shadow-md">
-                  <FileCheck className="w-6 h-6" />
-                </div>
-                <span className="text-xs font-semibold text-slate-200 mt-2.5">Circulars</span>
               </button>
             </div>
           </section>
@@ -495,7 +445,7 @@ export default function AdminPage() {
           <div className="delegate-panel rounded-3xl p-6 shadow-xl space-y-4">
             <h2 className="text-sm font-bold flex items-center space-x-2 text-white">
               <LinkIcon className="w-4 h-4 text-cyan-300" />
-              <span>Create Live Committee Link</span>
+              <span>Create Live Committee Room</span>
             </h2>
             <p className="text-xs text-slate-400">
               Generate synchronized room codes for live committee simulations or RoP masterclasses.
@@ -529,21 +479,6 @@ export default function AdminPage() {
 
               <div>
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                  Google Meet Link
-                </label>
-                <input
-                  required
-                  type="url"
-                  value={newMeetingUrl}
-                  onChange={(e) => setNewMeetingUrl(e.target.value)}
-                  placeholder="https://meet.google.com/qru-wspg-nzr"
-                  pattern="https://meet\.google\.com/.*"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                   Session Type
                 </label>
                 <select
@@ -558,7 +493,7 @@ export default function AdminPage() {
 
               <button
                 type="submit"
-                className="w-full rounded-xl bg-cyan-300 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-md shadow-cyan-500/20 active:scale-95"
+                className="w-full rounded-xl bg-cyan-300 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-md shadow-cyan-500/20 active:scale-95 cursor-pointer"
               >
                 Generate Room Code & Launch
               </button>
@@ -567,52 +502,56 @@ export default function AdminPage() {
 
           {/* Active Room Codes */}
           <div className="delegate-panel rounded-3xl p-6 shadow-xl space-y-3">
-            <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-300 block">
-              Active Room Codes ({meetings.length})
-            </span>
-
-            <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
-              {meetings.map((m) => (
-                <div
-                  key={m.id}
-                  className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between gap-2"
-                >
-                  <div className="space-y-0.5 min-w-0 pr-2">
-                    <p className="text-xs font-bold text-white truncate">{m.title}</p>
-                    <p className="text-[10px] font-mono text-cyan-300">Code: {m.code}</p>
-                  </div>
-
-                  <div className="flex items-center space-x-1.5 shrink-0">
-                    <button
-                      onClick={() => copyMeetingLink(m.code)}
-                      className="p-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-lg text-xs transition"
-                      title="Copy room link"
-                    >
-                      {copiedCode === m.code ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                    <Link
-                      to={`/room/${m.code}`}
-                      className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition"
-                    >
-                      Join
-                    </Link>
-                    <a
-                      href={m.googleMeetUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-bold transition flex items-center gap-1"
-                    >
-                      <span>Meet</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-300 block">
+                Active Room Codes ({meetings.length})
+              </span>
             </div>
+
+            {meetings.length === 0 ? (
+              <p className="text-xs text-slate-500 py-4 text-center">No active room codes</p>
+            ) : (
+              <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                {meetings.map((m) => (
+                  <div
+                    key={m.id}
+                    className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between gap-2 group"
+                  >
+                    <div className="space-y-0.5 min-w-0 pr-2">
+                      <p className="text-xs font-bold text-white truncate">{m.title}</p>
+                      <p className="text-[10px] font-mono text-cyan-300">Code: {m.code}</p>
+                    </div>
+
+                    <div className="flex items-center space-x-1.5 shrink-0">
+                      <button
+                        onClick={() => copyMeetingLink(m.code)}
+                        className="p-1.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-lg text-xs transition"
+                        title="Copy room link"
+                      >
+                        {copiedCode === m.code ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <Link
+                        to={`/room/${m.code}`}
+                        className="px-2.5 py-1 bg-cyan-400/10 hover:bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 rounded-lg text-xs font-bold transition"
+                      >
+                        Join Room
+                      </Link>
+                      <button
+                        onClick={() => handleDeleteMeeting(m.id, m.code)}
+                        className="p-1.5 bg-slate-900 border border-slate-800 hover:bg-rose-950/40 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 rounded-lg text-xs transition"
+                        title="Delete room code"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </aside>
       </main>
@@ -643,15 +582,13 @@ export default function AdminPage() {
                 <h3 className="mt-1 text-xl font-bold text-white">
                   {activeModal === 'MEETING'
                     ? 'Active Live Meetings'
-                    : activeModal === 'STAFF'
-                    ? 'Staff & Executive Board Roster'
-                    : 'Country Delegation Roster'}
+                    : 'Staff & Executive Board Roster'}
                 </h3>
               </div>
               <button
                 onClick={() => setActiveModal(null)}
                 aria-label="Close panel"
-                className="rounded-xl p-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition"
+                className="rounded-xl p-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition cursor-pointer"
               >
                 Close
               </button>
@@ -679,20 +616,11 @@ export default function AdminPage() {
                     placeholder="Specific agenda or working topic"
                     className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
                   />
-                  <input
-                    required
-                    type="url"
-                    value={newMeetingUrl}
-                    onChange={(e) => setNewMeetingUrl(e.target.value)}
-                    placeholder="https://meet.google.com/qru-wspg-nzr"
-                    pattern="https://meet\.google\.com/.*"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
-                  />
                   <button
                     type="submit"
-                    className="w-full rounded-xl bg-cyan-300 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition"
+                    className="w-full rounded-xl bg-cyan-300 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition cursor-pointer"
                   >
-                    Create Meeting
+                    Create Meeting Room
                   </button>
                 </form>
 
@@ -706,22 +634,21 @@ export default function AdminPage() {
                         <p className="text-xs font-bold text-white truncate">{meeting.title}</p>
                         <p className="font-mono text-[10px] text-cyan-400">{meeting.code}</p>
                       </div>
-                      <div className="flex gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <Link
                           onClick={() => setActiveModal(null)}
                           to={`/room/${meeting.code}`}
-                          className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                          className="rounded-lg bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 px-3 py-1.5 text-xs font-bold hover:bg-cyan-400/20"
                         >
                           Open Room
                         </Link>
-                        <a
-                          href={meeting.googleMeetUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400"
+                        <button
+                          onClick={() => handleDeleteMeeting(meeting.id, meeting.code)}
+                          className="rounded-lg bg-slate-900 border border-slate-800 p-1.5 text-slate-400 hover:text-rose-400 hover:border-rose-500/30 transition"
+                          title="Delete room code"
                         >
-                          Meet
-                        </a>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -796,39 +723,6 @@ export default function AdminPage() {
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Modal: Country Roster */}
-            {activeModal === 'ROSTER' && (
-              <div className="space-y-4">
-                <form onSubmit={handleAddCountry} className="flex gap-2">
-                  <input
-                    required
-                    value={newCountry}
-                    onChange={(e) => setNewCountry(e.target.value)}
-                    placeholder="Add delegation (e.g. Swiss Confederation, Republic of Korea)..."
-                    className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-xl bg-cyan-300 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition"
-                  >
-                    Add
-                  </button>
-                </form>
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 max-h-60 overflow-y-auto">
-                  {countries.map((country) => (
-                    <div
-                      key={country}
-                      className="rounded-xl bg-slate-950/80 border border-slate-800 px-3.5 py-2 text-xs text-slate-300 flex items-center justify-between"
-                    >
-                      <span>{country}</span>
-                      <Check className="w-3 h-3 text-emerald-400" />
                     </div>
                   ))}
                 </div>

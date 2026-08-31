@@ -1227,6 +1227,14 @@ app.post('/api/rooms/create', (req, res) => {
   }
 });
 
+// Delete Meeting Room
+app.delete('/api/rooms/:roomId', (req, res) => {
+  const { roomId } = req.params;
+  const cleanId = roomId.toLowerCase().trim();
+  const existed = liveRooms.delete(cleanId);
+  return res.json({ success: true, deleted: existed });
+});
+
 // Get or Ensure Meeting Room Exists
 app.get('/api/rooms/:roomId', (req, res) => {
   const { roomId } = req.params;

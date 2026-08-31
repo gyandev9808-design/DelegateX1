@@ -33,7 +33,7 @@ export interface MeetingRoom {
   title: string;
   topic: string;
   type: SessionType;
-  googleMeetUrl: string;
+  googleMeetUrl?: string;
   isLive?: boolean;
 }
 
