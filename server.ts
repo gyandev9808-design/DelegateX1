@@ -1439,6 +1439,11 @@ app.post('/api/rooms/:roomId/host-action', (req, res) => {
   return res.json({ success: true, room });
 });
 
+// Fallback JSON 404 handler for unmatched /api requests
+app.all('/api/*', (req, res) => {
+  return res.status(404).json({ error: `Endpoint ${req.method} ${req.path} not found` });
+});
+
 async function startServer() {
   // Vite middleware setup
   if (process.env.NODE_ENV !== 'production') {

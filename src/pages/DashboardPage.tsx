@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
 import {
   Sparkles,
   BookOpen,
@@ -14,14 +15,23 @@ import {
   FolderOpen,
   Radio,
   Award,
+  Globe2,
+  Flag,
+  Shield,
+  LogOut,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [roomCode, setRoomCode] = useState('');
   const [focusItems, setFocusItems] = useState([true, false, false]);
-  const userRole = localStorage.getItem('mun_user_role') || 'DELEGATE';
-  const userEmail = localStorage.getItem('mun_user_email') || '';
+  const userRole = user?.role || localStorage.getItem('mun_user_role') || 'DELEGATE';
+  const userEmail = user?.email || localStorage.getItem('mun_user_email') || '';
+  const userName = user?.name || localStorage.getItem('mun_user_name') || 'Distinguished Delegate';
+  const userCountry = user?.country || 'United States';
+  const userCommittee = user?.committee || 'UN Security Council (UNSC)';
+
   const isAdmin =
     userRole === 'ADMIN' ||
     userRole === 'MASTER_ADMIN' ||
@@ -58,18 +68,25 @@ export default function DashboardPage() {
         {/* Top greeting */}
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center border-b border-white/10 pb-6">
           <div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
-              Your Delegate Command Center
-            </p>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
+                Delegate Command Center
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 font-mono">
+                {userCommittee}
+              </span>
+            </div>
             <h1 className="text-3xl font-extrabold text-white sm:text-4xl">
-              Welcome back, <span className="text-cyan-300">Delegate</span>
+              Welcome back, <span className="text-cyan-300">{userName}</span>
             </h1>
-            <p className="mt-1 text-xs sm:text-sm text-slate-400">
-              Prepare your foreign policy stances and Rules of Procedure for the committee floor.
+            <p className="mt-1 text-xs sm:text-sm text-slate-400 flex items-center gap-2">
+              <span>Representing: <strong className="text-white font-semibold">{userCountry}</strong></span>
+              <span>•</span>
+              <span>Committee: <strong className="text-cyan-300 font-semibold">{userCommittee}</strong></span>
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Link
               to="/meet"
               className="flex items-center gap-2 rounded-full bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-200 hover:scale-105"
@@ -91,6 +108,17 @@ export default function DashboardPage() {
               <Radio className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
               <span>Live Floor</span>
             </Link>
+            <button
+              onClick={() => {
+                logout();
+                navigate('/');
+              }}
+              title="Sign Out"
+              className="flex items-center gap-1.5 rounded-full border border-rose-400/20 bg-rose-500/10 px-3.5 py-2.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 transition"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </button>
           </div>
         </div>
 
