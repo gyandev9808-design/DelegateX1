@@ -42,7 +42,7 @@ export default function HomePage() {
     [BookOpen, 'RoP Academy', 'Master THIMUN, UN4MUN, and North American parliamentary procedures with structured interactive modules.'],
     [Mic2, 'GSL & Caucus Clock', 'Real-time speaker timers, placard raising simulations, and queue management for seamless debate control.'],
     [Bot, 'AI Doubt Clarifier', 'Instant diplomatic answers on foreign policy stances, drafting operative clauses, and raising points.'],
-    [Users, 'Secretariat Workspace', 'Comprehensive control for Executive Boards: assign country rosters, manage Google Meet sessions, and chair rooms.'],
+    [Users, 'Secretariat Workspace', 'Comprehensive control for Executive Boards: manage live chamber rooms, supervise debate, and chair rooms.'],
     [Award, 'Delegate Command Center', 'Track syllabus mastery, research progress, and daily diplomatic focus items with structured study milestones.'],
   ];
 
