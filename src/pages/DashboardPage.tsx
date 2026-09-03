@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import DelegateSidebar from '../components/DelegateSidebar';
@@ -25,7 +25,21 @@ import {
   Edit2,
   X,
   User,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
+import {
+  getUnreadNotificationCount,
+  syncActiveMeetingNotifications,
+} from '../utils/notifications';
+
+interface DashboardMeeting {
+  id: string;
+  code: string;
+  title: string;
+  topic: string;
+  type?: string;
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -34,6 +48,76 @@ export default function DashboardPage() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [roomCode, setRoomCode] = useState('');
   const [focusItems, setFocusItems] = useState([true, false, false]);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState<number>(() => getUnreadNotificationCount());
+  const [activeMeetings, setActiveMeetings] = useState<DashboardMeeting[]>(() => {
+    try {
+      const saved = localStorage.getItem('mun_active_meetings');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const syncMeetings = () => {
+      let localList: DashboardMeeting[] = [];
+      try {
+        const saved = localStorage.getItem('mun_active_meetings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localList = parsed;
+        }
+      } catch {}
+
+      fetch('/api/rooms')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && Array.isArray(data.rooms) && data.rooms.length > 0) {
+            const mapped: DashboardMeeting[] = data.rooms.map((r: any) => ({
+              id: r.id,
+              code: r.id,
+              title: r.title,
+              topic: r.agenda || 'General Committee Debate',
+              type: 'LIVE_COMMITTEE',
+            }));
+            setActiveMeetings(mapped);
+            syncActiveMeetingNotifications(mapped);
+            setUnreadCount(getUnreadNotificationCount());
+          } else {
+            setActiveMeetings(localList);
+            if (localList.length > 0) {
+              syncActiveMeetingNotifications(localList);
+            }
+            setUnreadCount(getUnreadNotificationCount());
+          }
+        })
+        .catch(() => {
+          setActiveMeetings(localList);
+          if (localList.length > 0) {
+            syncActiveMeetingNotifications(localList);
+          }
+          setUnreadCount(getUnreadNotificationCount());
+        });
+    };
+
+    syncMeetings();
+
+    const handleUpdate = () => {
+      syncMeetings();
+      setUnreadCount(getUnreadNotificationCount());
+    };
+
+    window.addEventListener('mun_meetings_updated', handleUpdate);
+    window.addEventListener('mun_notifications_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+
+    return () => {
+      window.removeEventListener('mun_meetings_updated', handleUpdate);
+      window.removeEventListener('mun_notifications_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
 
   const rawName = user?.name || localStorage.getItem('mun_user_name') || '';
   let userName = rawName.trim();
@@ -126,15 +210,18 @@ export default function DashboardPage() {
               >
                 <Bell className="h-4 w-4 text-cyan-300" />
                 {/* Unread badge pulse */}
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400 text-[10px] font-black text-slate-950 ring-2 ring-slate-950">
-                  3
-                </span>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400 text-[10px] font-black text-slate-950 ring-2 ring-slate-950">
+                    {unreadCount}
+                  </span>
+                )}
               </button>
 
               {/* Notifications Popover Component */}
               <NotificationsPopover
                 isOpen={notificationsOpen}
                 onClose={() => setNotificationsOpen(false)}
+                onUnreadCountChange={setUnreadCount}
               />
             </div>
           </div>
@@ -359,33 +446,128 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          {/* Section 4: Live Committee Room Code Entry */}
-          <section className="rounded-3xl border border-cyan-400/30 bg-cyan-950/20 p-6 sm:p-8">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          {/* Section 4: Live Committee Chambers & Direct Access */}
+          <section className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">
-                  Direct Chamber Access
-                </p>
-                <h2 className="mt-1 text-lg sm:text-xl font-bold text-white">
-                  Have a Secretariat Committee Code? Enter the floor.
+                <div className="flex items-center gap-2">
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                  <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">
+                    Secretariat Live Chambers
+                  </p>
+                </div>
+                <h2 className="text-lg sm:text-xl font-bold text-white mt-1">
+                  Active Committee Sessions
                 </h2>
+                <p className="text-xs text-slate-400">
+                  Meeting codes created by Secretariat & Chairs appear dynamically here and in your notification feed.
+                </p>
               </div>
 
-              <form onSubmit={joinSession} className="flex w-full gap-2 sm:w-auto">
-                <input
-                  value={roomCode}
-                  onChange={(e) => setRoomCode(e.target.value)}
-                  placeholder="e.g. UNSC-ARCTIC-2026"
-                  className="min-w-0 flex-1 rounded-xl border border-white/15 bg-slate-950/80 px-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none sm:w-64"
-                />
-                <button
-                  type="submit"
-                  className="rounded-xl bg-cyan-300 px-5 py-2.5 text-xs sm:text-sm font-bold text-slate-950 transition hover:bg-cyan-200 flex items-center gap-1.5"
-                >
-                  <span>Enter</span>
-                  <Play className="h-3.5 w-3.5 fill-current" />
-                </button>
-              </form>
+              <Link
+                to="/meet"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-300 hover:text-cyan-200 self-start sm:self-auto"
+              >
+                <span>Chamber Directory</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            {/* Active Meetings Grid */}
+            {activeMeetings.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {activeMeetings.map((m) => (
+                  <div
+                    key={m.id || m.code}
+                    className="rounded-2xl border border-cyan-400/30 bg-slate-950/90 p-5 shadow-lg shadow-cyan-950/20 space-y-4 hover:border-cyan-400/60 transition"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="inline-block rounded-full bg-cyan-400/10 border border-cyan-400/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                          {m.type === 'TRAINING' ? 'Diplomatic Masterclass' : 'Live Committee Chamber'}
+                        </span>
+                        <h3 className="text-base font-bold text-white mt-1 truncate">{m.title}</h3>
+                        <p className="text-xs text-slate-400 line-clamp-2 mt-0.5">{m.topic}</p>
+                      </div>
+
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold shrink-0">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+                        Live Floor
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-white/10 text-xs">
+                      {/* Room Code Badge with Copy */}
+                      <div className="flex items-center gap-1.5 bg-slate-900 border border-cyan-400/25 px-2.5 py-1.5 rounded-xl">
+                        <span className="text-[10px] text-slate-400 uppercase font-mono">Code:</span>
+                        <span className="font-mono font-bold text-cyan-300 text-xs sm:text-sm">{m.code}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(m.code);
+                            setCopiedCode(m.code);
+                            setTimeout(() => setCopiedCode(null), 2000);
+                          }}
+                          title="Copy Room Code"
+                          className="ml-1 text-slate-400 hover:text-white transition cursor-pointer p-0.5"
+                        >
+                          {copiedCode === m.code ? (
+                            <Check className="h-3.5 w-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => navigate(`/room/${encodeURIComponent(m.code)}`)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-300 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-md shadow-cyan-400/20 cursor-pointer"
+                      >
+                        <span>Enter Floor</span>
+                        <Play className="h-3 w-3 fill-current" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-6 text-center space-y-2">
+                <Video className="h-7 w-7 text-cyan-400/50 mx-auto" />
+                <p className="text-sm font-semibold text-white">No Committee Chambers Currently In Session</p>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  When the Secretariat or Chair initializes a meeting in the Admin Dashboard, the session code and agenda will immediately appear here and trigger a notification in your bell menu.
+                </p>
+              </div>
+            )}
+
+            {/* Direct Room Code Manual Entry */}
+            <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-5 sm:p-6">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-cyan-300">
+                    Direct Floor Access
+                  </p>
+                  <h3 className="text-sm sm:text-base font-bold text-white mt-0.5">
+                    Have an official meeting code? Enter below to join debate.
+                  </h3>
+                </div>
+
+                <form onSubmit={joinSession} className="flex w-full gap-2 sm:w-auto">
+                  <input
+                    value={roomCode}
+                    onChange={(e) => setRoomCode(e.target.value)}
+                    placeholder="Enter meeting code (e.g. unsc-2026)"
+                    className="min-w-0 flex-1 rounded-xl border border-white/15 bg-slate-900 px-4 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none sm:w-64"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!roomCode.trim()}
+                    className="rounded-xl bg-cyan-300 px-5 py-2 text-xs sm:text-sm font-bold text-slate-950 transition hover:bg-cyan-200 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <span>Enter</span>
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                  </button>
+                </form>
+              </div>
             </div>
           </section>
         </main>

@@ -56,23 +56,26 @@ export default function MeetLandingPage() {
   const [agendaTopic, setAgendaTopic] = useState('Arctic Sovereignty & Maritime Navigation');
   const [hostName, setHostName] = useState('');
 
-  // Active rooms list
-  const [activeRooms, setActiveRooms] = useState<ActiveRoom[]>([
-    {
-      id: 'unsc-arkt-2026',
-      title: 'Arctic Sovereignty & Maritime Corridors',
-      committee: 'UN Security Council (UNSC)',
-      agenda: 'Sovereign boundaries and international transit passages',
-      participantsCount: 15,
-    },
-    {
-      id: 'hrc-prot-2026',
-      title: 'Protection of Displaced Persons in Conflict Zones',
-      committee: 'UN Human Rights Council (UNHRC)',
-      agenda: 'Humanitarian corridors and refugee relocation protocols',
-      participantsCount: 22,
-    },
-  ]);
+  // Active rooms list loaded from synchronized meetings
+  const [activeRooms, setActiveRooms] = useState<ActiveRoom[]>(() => {
+    try {
+      const saved = localStorage.getItem('mun_active_meetings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((m: any) => ({
+            id: m.code || m.id,
+            title: m.title,
+            committee: m.title?.substring(0, 4)?.toUpperCase() || 'MUN',
+            agenda: m.topic || 'General Committee Debate',
+            participantsCount: 1,
+          }));
+        }
+      }
+    } catch {}
+    return [];
+  });
+  const [copiedRoomCode, setCopiedRoomCode] = useState<string | null>(null);
 
   useEffect(() => {
     const role = localStorage.getItem('mun_user_role') || 'DELEGATE';
@@ -85,28 +88,60 @@ export default function MeetLandingPage() {
       setHostName(name);
     }
 
-    // Fetch active rooms from server
-    fetch('/api/rooms')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.rooms && data.rooms.length > 0) {
-          setActiveRooms((prev) => {
-            const map = new Map<string, ActiveRoom>();
-            prev.forEach((r) => map.set(r.id, r));
-            data.rooms.forEach((r: any) =>
-              map.set(r.id, {
+    const loadRooms = () => {
+      // First check localStorage
+      let localList: ActiveRoom[] = [];
+      try {
+        const saved = localStorage.getItem('mun_active_meetings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            localList = parsed.map((m: any) => ({
+              id: m.code || m.id,
+              title: m.title,
+              committee: m.title?.substring(0, 4)?.toUpperCase() || 'MUN',
+              agenda: m.topic || 'General Committee Debate',
+              participantsCount: 1,
+            }));
+          }
+        }
+      } catch {}
+
+      // Fetch active rooms from server
+      fetch('/api/rooms')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && Array.isArray(data.rooms)) {
+            if (data.rooms.length > 0) {
+              const serverRooms: ActiveRoom[] = data.rooms.map((r: any) => ({
                 id: r.id,
                 title: r.title,
-                committee: r.committee,
+                committee: r.committee || r.title?.substring(0, 4)?.toUpperCase() || 'UNSC',
                 agenda: r.agenda,
                 participantsCount: r.participantsCount || 1,
-              })
-            );
-            return Array.from(map.values());
-          });
-        }
-      })
-      .catch(() => {});
+              }));
+              setActiveRooms(serverRooms);
+            } else {
+              setActiveRooms(localList);
+            }
+          } else {
+            setActiveRooms(localList);
+          }
+        })
+        .catch(() => {
+          setActiveRooms(localList);
+        });
+    };
+
+    loadRooms();
+
+    window.addEventListener('mun_meetings_updated', loadRooms);
+    window.addEventListener('storage', loadRooms);
+
+    return () => {
+      window.removeEventListener('mun_meetings_updated', loadRooms);
+      window.removeEventListener('storage', loadRooms);
+    };
   }, []);
 
   const isAdmin =
@@ -411,38 +446,66 @@ export default function MeetLandingPage() {
 
               {/* Dynamic Active Meeting Rooms */}
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                {activeRooms.map((room) => (
-                  <div
-                    key={room.id}
-                    className="rounded-2xl border border-white/10 bg-slate-950/80 p-4 space-y-3 transition hover:border-cyan-400/40"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                          {room.committee}
-                        </span>
-                        <h4 className="text-sm font-bold text-white mt-0.5">{room.title}</h4>
-                      </div>
-                      <span className="font-mono text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-slate-300 shrink-0">
-                        {room.id}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-3.5 w-3.5 text-slate-400" />
-                        <span>{room.participantsCount} on Floor</span>
-                      </div>
-                      <Link
-                        to={`/meet/${room.id}`}
-                        className="inline-flex items-center gap-1 text-xs font-bold text-cyan-300 hover:text-cyan-200"
-                      >
-                        <span>Enter Floor</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </Link>
-                    </div>
+                {activeRooms.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-6 text-center space-y-2">
+                    <Video className="h-8 w-8 text-slate-600 mx-auto opacity-50" />
+                    <p className="text-xs font-semibold text-slate-300">No Chambers Currently Active</p>
+                    <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
+                      Secretariat or Chairs will broadcast room codes when sessions begin. Room codes will appear here and in your notifications.
+                    </p>
                   </div>
-                ))}
+                ) : (
+                  activeRooms.map((room) => (
+                    <div
+                      key={room.id}
+                      className="rounded-2xl border border-white/10 bg-slate-950/80 p-4 space-y-3 transition hover:border-cyan-400/40"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                            {room.committee}
+                          </span>
+                          <h4 className="text-sm font-bold text-white mt-0.5 truncate">{room.title}</h4>
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">{room.agenda}</p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="font-mono text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-cyan-300">
+                            {room.id}
+                          </span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(room.id);
+                              setCopiedRoomCode(room.id);
+                              setTimeout(() => setCopiedRoomCode(null), 2000);
+                            }}
+                            title="Copy Room Code"
+                            className="p-1 rounded bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition cursor-pointer"
+                          >
+                            {copiedRoomCode === room.id ? (
+                              <Check className="h-3 w-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5">
+                        <div className="flex items-center gap-2">
+                          <Users className="h-3.5 w-3.5 text-slate-400" />
+                          <span>{room.participantsCount} on Floor</span>
+                        </div>
+                        <Link
+                          to={`/room/${room.id}`}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-cyan-300 hover:text-cyan-200"
+                        >
+                          <span>Enter Floor</span>
+                          <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* Configuration Fields for Next Meeting (Admin Only) */}

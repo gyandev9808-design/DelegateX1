@@ -32,6 +32,7 @@ import {
 import { StaffAccount, MeetingRoom } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { PromptGenerator } from '../components/admin/PromptGenerator';
+import { addMeetingRoomNotification, deleteNotification } from '../utils/notifications';
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -157,6 +158,14 @@ export default function AdminPage() {
         return updated;
       });
 
+      // Synchronize with delegate notifications
+      addMeetingRoomNotification({
+        code: finalCode,
+        title: newMeeting.title,
+        topic: newMeeting.topic,
+      });
+      window.dispatchEvent(new Event('mun_meetings_updated'));
+
       setNewMeetingTitle('');
       setNewMeetingTopic('');
       showNotice(`Meeting room created! Single room server online: ${finalCode}`);
@@ -173,6 +182,14 @@ export default function AdminPage() {
         localStorage.setItem('mun_active_meetings', JSON.stringify(updated));
         return updated;
       });
+
+      addMeetingRoomNotification({
+        code: generatedCode,
+        title: fallbackMeeting.title,
+        topic: fallbackMeeting.topic,
+      });
+      window.dispatchEvent(new Event('mun_meetings_updated'));
+
       setNewMeetingTitle('');
       setNewMeetingTopic('');
       showNotice(`Meeting room created! Room code: ${generatedCode}`);
@@ -185,6 +202,8 @@ export default function AdminPage() {
       localStorage.setItem('mun_active_meetings', JSON.stringify(updated));
       return updated;
     });
+    deleteNotification(`notif_room_${code.toLowerCase().trim()}`);
+    window.dispatchEvent(new Event('mun_meetings_updated'));
     fetch(`/api/rooms/${code}`, {
       method: 'DELETE',
     }).catch(() => {});
