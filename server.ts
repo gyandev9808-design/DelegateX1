@@ -1168,7 +1168,21 @@ app.post('/api/rooms/create', (req, res) => {
       });
     }
 
-    const roomId = generateMeetCode();
+    const requestedCode = (req.body.roomId || req.body.code)?.toString().toLowerCase().trim();
+    const roomId = requestedCode || generateMeetCode();
+
+    // Enforce only one server per meeting code - return existing instance if already created
+    if (liveRooms.has(roomId)) {
+      const existingRoom = liveRooms.get(roomId)!;
+      return res.status(200).json({
+        roomId,
+        room: existingRoom,
+        hostId: existingRoom.hostId,
+        alreadyExists: true,
+        message: 'Connected to existing meeting server',
+      });
+    }
+
     const hostId = 'user_' + Math.random().toString(36).substring(2, 9);
 
     const newRoom: RoomState = {

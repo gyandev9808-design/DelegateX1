@@ -27,9 +27,11 @@ import {
   LayoutDashboard,
   LogIn,
   User,
+  Sparkles,
 } from 'lucide-react';
 import { StaffAccount, MeetingRoom } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { PromptGenerator } from '../components/admin/PromptGenerator';
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -73,71 +75,116 @@ export default function AdminPage() {
   const [newStaffPassword, setNewStaffPassword] = useState('');
   const [newStaffRole, setNewStaffRole] = useState<'ADMIN' | 'CHAIR'>('CHAIR');
 
-  const [meetings, setMeetings] = useState<MeetingRoom[]>([
-    {
-      id: '1',
-      code: 'unsc-2026',
-      title: 'UNSC: Situation in Arctic',
-      topic: 'Militarization & Navigation',
-      type: 'LIVE_COMMITTEE',
-    },
-    {
-      id: '2',
-      code: 'train-rop-01',
-      title: 'THIMUN RoP Masterclass',
-      topic: 'Resolution Drafting',
-      type: 'TRAINING',
-    },
-    {
-      id: '3',
-      code: 'disec-2026',
-      title: 'DISEC: Autonomous Weaponry',
-      topic: 'AI Non-Proliferation',
-      type: 'LIVE_COMMITTEE',
-    },
-  ]);
+  // Live meeting rooms initialized as empty - only created on-demand with one server per meeting
+  const [meetings, setMeetings] = useState<MeetingRoom[]>(() => {
+    try {
+      const saved = localStorage.getItem('mun_active_meetings');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Synchronize active meeting servers from the server
+  React.useEffect(() => {
+    fetch('/api/rooms')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.rooms)) {
+          if (data.rooms.length > 0) {
+            const mapped: MeetingRoom[] = data.rooms.map((r: any) => ({
+              id: r.id,
+              code: r.id,
+              title: r.title,
+              topic: r.agenda,
+              type: 'LIVE_COMMITTEE',
+            }));
+            setMeetings(mapped);
+            localStorage.setItem('mun_active_meetings', JSON.stringify(mapped));
+          } else {
+            // When server has no active rooms, clean local state so no stale meetings are shown
+            const saved = localStorage.getItem('mun_active_meetings');
+            if (!saved) {
+              setMeetings([]);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [newMeetingTitle, setNewMeetingTitle] = useState('');
   const [newMeetingTopic, setNewMeetingTopic] = useState('');
   const [newMeetingType, setNewMeetingType] = useState<'LIVE_COMMITTEE' | 'TRAINING'>('LIVE_COMMITTEE');
 
-  const handleCreateMeeting = (e: React.FormEvent) => {
+  const handleCreateMeeting = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMeetingTitle.trim()) return;
 
     const cleanTitlePrefix = newMeetingTitle.trim().substring(0, 4).toUpperCase().replace(/[^A-Z]/g, 'MUN');
     const generatedCode = `${cleanTitlePrefix.toLowerCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newMeeting: MeetingRoom = {
-      id: Date.now().toString(),
-      code: generatedCode,
-      title: newMeetingTitle.trim(),
-      topic: newMeetingTopic.trim() || 'General Committee Debate',
-      type: newMeetingType,
-    };
+    try {
+      // Register with server live room store enforcing exactly ONE server per meeting
+      const res = await fetch('/api/rooms/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId: generatedCode,
+          code: generatedCode,
+          title: newMeetingTitle.trim(),
+          committee: cleanTitlePrefix,
+          agenda: newMeetingTopic.trim() || 'General Committee Debate',
+          userRole: user?.role || 'ADMIN',
+          userEmail: user?.email || 'gyan.dev9808@gmail.com',
+          passkey: 'AdminSecretariat2026!',
+        }),
+      });
+      const data = await res.json();
+      const finalCode = data.roomId || generatedCode;
 
-    // Register with server live room store
-    fetch('/api/rooms/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: newMeeting.title,
-        committee: cleanTitlePrefix,
-        agenda: newMeeting.topic,
-        userRole: 'ADMIN',
-        userEmail: 'gyan.dev9808@gmail.com',
-        passkey: 'AdminSecretariat2026!',
-      }),
-    }).catch(() => {});
+      const newMeeting: MeetingRoom = {
+        id: Date.now().toString(),
+        code: finalCode,
+        title: newMeetingTitle.trim(),
+        topic: newMeetingTopic.trim() || 'General Committee Debate',
+        type: newMeetingType,
+      };
 
-    setMeetings([newMeeting, ...meetings]);
-    setNewMeetingTitle('');
-    setNewMeetingTopic('');
-    showNotice(`Meeting room created! Room code: ${generatedCode}`);
+      setMeetings((prev) => {
+        const updated = [newMeeting, ...prev.filter((m) => m.code !== finalCode)];
+        localStorage.setItem('mun_active_meetings', JSON.stringify(updated));
+        return updated;
+      });
+
+      setNewMeetingTitle('');
+      setNewMeetingTopic('');
+      showNotice(`Meeting room created! Single room server online: ${finalCode}`);
+    } catch {
+      const fallbackMeeting: MeetingRoom = {
+        id: Date.now().toString(),
+        code: generatedCode,
+        title: newMeetingTitle.trim(),
+        topic: newMeetingTopic.trim() || 'General Committee Debate',
+        type: newMeetingType,
+      };
+      setMeetings((prev) => {
+        const updated = [fallbackMeeting, ...prev];
+        localStorage.setItem('mun_active_meetings', JSON.stringify(updated));
+        return updated;
+      });
+      setNewMeetingTitle('');
+      setNewMeetingTopic('');
+      showNotice(`Meeting room created! Room code: ${generatedCode}`);
+    }
   };
 
   const handleDeleteMeeting = (id: string, code: string) => {
-    setMeetings((prev) => prev.filter((m) => m.id !== id));
+    setMeetings((prev) => {
+      const updated = prev.filter((m) => m.id !== id && m.code !== code);
+      localStorage.setItem('mun_active_meetings', JSON.stringify(updated));
+      return updated;
+    });
     fetch(`/api/rooms/${code}`, {
       method: 'DELETE',
     }).catch(() => {});
@@ -346,13 +393,13 @@ export default function AdminPage() {
             <h2 className="text-xs uppercase font-bold tracking-[0.22em] text-slate-300 mb-4">
               Core Secretariat Controls
             </h2>
-            <div className="grid grid-cols-2 gap-4 text-center">
+            <div className="grid grid-cols-3 gap-3 sm:gap-4 text-center">
               <button
                 onClick={() => setActiveModal('MEETING')}
                 className="group flex flex-col items-center rounded-2xl p-4 transition hover:bg-slate-800/80 cursor-pointer"
               >
-                <div className="w-13 h-13 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-300 group-hover:scale-105 transition shadow-md">
-                  <Video className="w-6 h-6" />
+                <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-300 group-hover:scale-105 transition shadow-md">
+                  <Video className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <span className="text-xs font-semibold text-slate-200 mt-2.5">Live Meetings</span>
               </button>
@@ -361,10 +408,23 @@ export default function AdminPage() {
                 onClick={() => setActiveModal('STAFF')}
                 className="group flex flex-col items-center rounded-2xl p-4 transition hover:bg-slate-800/80 cursor-pointer"
               >
-                <div className="w-13 h-13 rounded-2xl bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center text-emerald-300 group-hover:scale-105 transition shadow-md">
-                  <UserPlus className="w-6 h-6" />
+                <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center text-emerald-300 group-hover:scale-105 transition shadow-md">
+                  <UserPlus className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <span className="text-xs font-semibold text-slate-200 mt-2.5">Staff & EB</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const el = document.getElementById('prompt-generator-section');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="group flex flex-col items-center rounded-2xl p-4 transition hover:bg-slate-800/80 cursor-pointer"
+              >
+                <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-300 group-hover:scale-105 transition shadow-md">
+                  <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+                </div>
+                <span className="text-xs font-semibold text-slate-200 mt-2.5">Prompt Gen</span>
               </button>
             </div>
           </section>
@@ -444,6 +504,17 @@ export default function AdminPage() {
               </button>
             </div>
           </section>
+
+          {/* Prompt Generator Section */}
+          <PromptGenerator
+            onApplyToMeeting={(appliedCommittee, appliedTopic) => {
+              setNewMeetingTitle(appliedCommittee);
+              setNewMeetingTopic(appliedTopic);
+              const formEl = document.getElementById('create-meeting-form');
+              if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+            }}
+            showToast={showNotice}
+          />
         </div>
 
         {/* Right Col: Create Live Meeting & Active Room Codes */}
@@ -458,7 +529,7 @@ export default function AdminPage() {
               Generate synchronized room codes for live committee simulations or RoP masterclasses.
             </p>
 
-            <form onSubmit={handleCreateMeeting} className="space-y-3 pt-1">
+            <form id="create-meeting-form" onSubmit={handleCreateMeeting} className="space-y-3 pt-1">
               <div>
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                   Committee Title
@@ -516,7 +587,12 @@ export default function AdminPage() {
             </div>
 
             {meetings.length === 0 ? (
-              <p className="text-xs text-slate-500 py-4 text-center">No active room codes</p>
+              <div className="py-6 px-3 text-center space-y-1">
+                <p className="text-xs font-semibold text-slate-400">No active meetings scheduled</p>
+                <p className="text-[11px] text-slate-500">
+                  Create a live room above or use the Prompt Generator to initialize a single unified meeting server.
+                </p>
+              </div>
             ) : (
               <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
                 {meetings.map((m) => (
@@ -632,33 +708,39 @@ export default function AdminPage() {
                 </form>
 
                 <div className="space-y-2 border-t border-slate-800 pt-4 max-h-56 overflow-y-auto">
-                  {meetings.map((meeting) => (
-                    <div
-                      key={meeting.id}
-                      className="flex items-center justify-between rounded-xl bg-slate-950/80 p-3 border border-slate-800"
-                    >
-                      <div className="pr-2 min-w-0">
-                        <p className="text-xs font-bold text-white truncate">{meeting.title}</p>
-                        <p className="font-mono text-[10px] text-cyan-400">{meeting.code}</p>
+                  {meetings.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-4 text-center">
+                      No active meetings scheduled. Use the form above to initialize a room.
+                    </p>
+                  ) : (
+                    meetings.map((meeting) => (
+                      <div
+                        key={meeting.id}
+                        className="flex items-center justify-between rounded-xl bg-slate-950/80 p-3 border border-slate-800"
+                      >
+                        <div className="pr-2 min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{meeting.title}</p>
+                          <p className="font-mono text-[10px] text-cyan-400">{meeting.code}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Link
+                            onClick={() => setActiveModal(null)}
+                            to={`/room/${meeting.code}`}
+                            className="rounded-lg bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 px-3 py-1.5 text-xs font-bold hover:bg-cyan-400/20"
+                          >
+                            Open Room
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteMeeting(meeting.id, meeting.code)}
+                            className="rounded-lg bg-slate-900 border border-slate-800 p-1.5 text-slate-400 hover:text-rose-400 hover:border-rose-500/30 transition"
+                            title="Delete room code"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Link
-                          onClick={() => setActiveModal(null)}
-                          to={`/room/${meeting.code}`}
-                          className="rounded-lg bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 px-3 py-1.5 text-xs font-bold hover:bg-cyan-400/20"
-                        >
-                          Open Room
-                        </Link>
-                        <button
-                          onClick={() => handleDeleteMeeting(meeting.id, meeting.code)}
-                          className="rounded-lg bg-slate-900 border border-slate-800 p-1.5 text-slate-400 hover:text-rose-400 hover:border-rose-500/30 transition"
-                          title="Delete room code"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             )}
