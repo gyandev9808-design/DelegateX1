@@ -101,9 +101,10 @@ const RTC_CONFIG: RTCConfiguration = {
 };
 
 export default function MeetRoomPage() {
-  const { roomId } = useParams<{ roomId: string }>();
+  const params = useParams<{ roomId?: string; id?: string }>();
   const navigate = useNavigate();
-  const cleanRoomId = (roomId || 'unsc-live').toLowerCase().trim();
+  const rawRoomId = params.roomId || params.id;
+  const cleanRoomId = (rawRoomId || 'unsc-live').toLowerCase().trim();
 
   // --- LOBBY / PRE-JOIN STATE ---
   const [isInLobby, setIsInLobby] = useState<boolean>(true);
@@ -360,9 +361,12 @@ export default function MeetRoomPage() {
     if (next) {
       soundEffects.playHandRaiseChime();
       triggerReaction('🙋‍♂️');
-      // Add user to GSL Speaker queue
-      if (!gslSpeakers.includes(localUserName)) {
-        setGslSpeakers((prev) => [...prev, `${localUserName} (${localCountry})`]);
+      // Add user to GSL Speaker queue and synchronize across the single room server
+      const speakerEntry = `${localUserName} (${localCountry})`;
+      if (!gslSpeakers.includes(speakerEntry)) {
+        const nextQueue = [...gslSpeakers, speakerEntry];
+        setGslSpeakers(nextQueue);
+        syncFloorStateToServer({ speakersQueue: nextQueue });
       }
     }
     updateParticipantState({ isHandRaised: next });
@@ -504,6 +508,25 @@ export default function MeetRoomPage() {
     } catch {}
   };
 
+  // Sync GSL Queue, Timers, and Floor State to the authoritative single server
+  const syncFloorStateToServer = async (updates: {
+    speakersQueue?: string[];
+    currentSpeakerIndex?: number;
+    speechDuration?: number;
+    timeLeft?: number;
+    isTimerRunning?: boolean;
+  }) => {
+    try {
+      await fetch(`/api/rooms/${cleanRoomId}/floor-state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+    } catch (err) {
+      console.warn('Floor state server sync error:', err);
+    }
+  };
+
   // ----------------------------------------------------
   // 4. WebRTC MESH PEER CONNECTIONS & SIGNALING
   // ----------------------------------------------------
@@ -563,8 +586,8 @@ export default function MeetRoomPage() {
 
     const interval = setInterval(async () => {
       try {
-        // Fetch Room Sync
-        const roomRes = await fetch(`/api/rooms/${cleanRoomId}`);
+        // Fetch Room Sync from Single Authoritative Room Server
+        const roomRes = await fetch(`/api/rooms/${cleanRoomId}?userId=${localUserId}`);
         const roomData = await roomRes.json();
         if (roomData.room) {
           const r: RoomState = roomData.room;
@@ -574,6 +597,20 @@ export default function MeetRoomPage() {
           setIsLocked(!!r.isLocked);
           setChatDisabled(!!r.chatDisabled);
           setScreenShareDisabled(!!r.screenShareDisabled);
+
+          // Synchronize GSL floor state from authoritative single room server
+          if (Array.isArray(r.speakersQueue)) {
+            setGslSpeakers(r.speakersQueue);
+          }
+          if (typeof r.timeLeft === 'number') {
+            setGslTimeLeft(r.timeLeft);
+          }
+          if (typeof r.isTimerRunning === 'boolean') {
+            setIsGslRunning(r.isTimerRunning);
+          }
+          if (typeof r.speechDuration === 'number') {
+            setGslTime(r.speechDuration);
+          }
 
           // Update participants list (excluding self)
           const otherParticipants = (r.participants || []).filter((p) => p.id !== localUserId);
@@ -1379,8 +1416,13 @@ export default function MeetRoomPage() {
                   {/* Timer Controls */}
                   <div className="flex items-center justify-center gap-2 pt-2">
                     <button
-                      onClick={() => setIsGslRunning(!isGslRunning)}
+                      onClick={() => {
+                        const next = !isGslRunning;
+                        setIsGslRunning(next);
+                        syncFloorStateToServer({ isTimerRunning: next, timeLeft: gslTimeLeft });
+                      }}
                       className="p-2.5 rounded-full bg-cyan-300 text-slate-950 font-bold hover:bg-cyan-200 transition"
+                      title={isGslRunning ? 'Pause Floor Clock' : 'Start Floor Clock'}
                     >
                       {isGslRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                     </button>
@@ -1388,6 +1430,7 @@ export default function MeetRoomPage() {
                       onClick={() => {
                         setIsGslRunning(false);
                         setGslTimeLeft(gslTime);
+                        syncFloorStateToServer({ isTimerRunning: false, timeLeft: gslTime, speechDuration: gslTime });
                       }}
                       className="p-2.5 rounded-full bg-slate-800 text-slate-300 hover:text-white transition"
                       title="Reset Clock"
@@ -1396,10 +1439,18 @@ export default function MeetRoomPage() {
                     </button>
                     <button
                       onClick={() => {
-                        setGslSpeakers((prev) => prev.slice(1));
+                        const nextQueue = gslSpeakers.slice(1);
+                        setGslSpeakers(nextQueue);
                         setGslTimeLeft(gslTime);
+                        setIsGslRunning(false);
+                        syncFloorStateToServer({
+                          speakersQueue: nextQueue,
+                          timeLeft: gslTime,
+                          isTimerRunning: false,
+                        });
                       }}
                       className="px-3.5 py-1.5 rounded-xl bg-slate-800 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition"
+                      title="Yield to Next Delegation"
                     >
                       Yield Floor
                     </button>
@@ -1414,6 +1465,7 @@ export default function MeetRoomPage() {
                       onClick={() => {
                         setGslTime(t);
                         setGslTimeLeft(t);
+                        syncFloorStateToServer({ speechDuration: t, timeLeft: t });
                       }}
                       className={`px-3 py-1 rounded-xl text-xs font-bold border transition ${
                         gslTime === t
@@ -1440,7 +1492,11 @@ export default function MeetRoomPage() {
                         </span>
                         {idx > 0 && (
                           <button
-                            onClick={() => setGslSpeakers(gslSpeakers.filter((_, i) => i !== idx))}
+                            onClick={() => {
+                              const nextQueue = gslSpeakers.filter((_, i) => i !== idx);
+                              setGslSpeakers(nextQueue);
+                              syncFloorStateToServer({ speakersQueue: nextQueue });
+                            }}
                             className="text-slate-500 hover:text-rose-400 p-1"
                           >
                             <Trash2 className="h-3 w-3" />
@@ -1463,8 +1519,10 @@ export default function MeetRoomPage() {
                       <button
                         onClick={() => {
                           if (newSpeakerInput.trim()) {
-                            setGslSpeakers([...gslSpeakers, newSpeakerInput.trim()]);
+                            const nextQueue = [...gslSpeakers, newSpeakerInput.trim()];
+                            setGslSpeakers(nextQueue);
                             setNewSpeakerInput('');
+                            syncFloorStateToServer({ speakersQueue: nextQueue });
                           }
                         }}
                         className="px-3.5 py-1.5 rounded-xl bg-cyan-300 text-slate-950 font-bold text-xs hover:bg-cyan-200"
@@ -1597,6 +1655,10 @@ export default function MeetRoomPage() {
               {roomTitle}
             </span>
             <span className="text-[10px] font-mono text-cyan-300 hidden lg:inline shrink-0">({cleanRoomId})</span>
+            <span className="hidden sm:inline-flex items-center gap-1.5 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold text-emerald-300 shrink-0" title="Connected to the authoritative single server for this meeting">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Single Server
+            </span>
           </div>
           {activeBreakoutId && (
             <span className="hidden xl:inline-flex items-center gap-1 bg-cyan-400/10 border border-cyan-400/30 px-2 py-0.5 rounded-full text-[10px] font-semibold text-cyan-300 shrink-0">

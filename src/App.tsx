@@ -24,6 +24,7 @@ export default function App() {
           <Route path="/meet/:roomId" element={<MeetRoomPage />} />
           <Route path="/training" element={<TrainingPage />} />
           <Route path="/committee" element={<CommitteePage />} />
+          <Route path="/room/:roomId" element={<MeetRoomPage />} />
           <Route path="/room/:id" element={<MeetRoomPage />} />
           <Route path="/ai-doubt-clarifier" element={<AiDoubtClarifierPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />

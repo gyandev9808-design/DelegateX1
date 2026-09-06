@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import { addMeetingRoomNotification } from '../utils/notifications';
 import {
   Video,
   Plus,
@@ -184,10 +185,31 @@ export default function MeetLandingPage() {
       }
 
       if (data.roomId) {
+        const finalCode = data.roomId;
+        try {
+          const saved = localStorage.getItem('mun_active_meetings');
+          const existingList = saved ? JSON.parse(saved) : [];
+          const newEntry = {
+            id: finalCode,
+            code: finalCode,
+            title: committeeTitle || 'Live Committee Session',
+            topic: agendaTopic || 'General Multilateral Debate',
+            type: 'LIVE_COMMITTEE',
+          };
+          const updated = [newEntry, ...existingList.filter((m: any) => m.code !== finalCode)];
+          localStorage.setItem('mun_active_meetings', JSON.stringify(updated));
+          addMeetingRoomNotification({
+            code: finalCode,
+            title: newEntry.title,
+            topic: newEntry.topic,
+          });
+          window.dispatchEvent(new Event('mun_meetings_updated'));
+        } catch {}
+
         if (isInstant) {
-          navigate(`/meet/${data.roomId}`);
+          navigate(`/meet/${finalCode}`);
         } else {
-          setGeneratedRoomId(data.roomId);
+          setGeneratedRoomId(finalCode);
           setShowCreateModal(true);
         }
       }
