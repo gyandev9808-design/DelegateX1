@@ -46,11 +46,14 @@ interface Participant {
   name: string;
   country?: string;
   role: 'CHAIR' | 'DELEGATE' | 'SECRETARY' | 'GUEST';
-  avatarColor: string;
-  isMuted: boolean;
-  isVideoOn: boolean;
+  avatarColor?: string;
+  isMuted?: boolean;
+  isVideoOn?: boolean;
+  isAudioMuted?: boolean;
+  isVideoMuted?: boolean;
   isHandRaised: boolean;
   isSpeaking?: boolean;
+  videoFrame?: string;
   joinedAt: number;
 }
 
@@ -92,12 +95,30 @@ interface FloatingReaction {
   y: number;
 }
 
-// WebRTC ICE Servers
+// WebRTC ICE Servers with STUN + TURN Relays for Universal Connectivity
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    {
+      urls: 'turn:standard.relay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:standard.relay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:standard.relay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 export default function MeetRoomPage() {
@@ -109,10 +130,10 @@ export default function MeetRoomPage() {
   // --- LOBBY / PRE-JOIN STATE ---
   const [isInLobby, setIsInLobby] = useState<boolean>(true);
   const [localUserName, setLocalUserName] = useState<string>(
-    () => localStorage.getItem('mun_user_name') || 'Diplomatic Delegate'
+    () => localStorage.getItem('mun_user_name') || ''
   );
   const [localCountry, setLocalCountry] = useState<string>(
-    () => localStorage.getItem('mun_user_country') || 'France'
+    () => localStorage.getItem('mun_user_country') || ''
   );
   const [localRole, setLocalRole] = useState<'CHAIR' | 'DELEGATE'>('DELEGATE');
   const [lobbyAudioLevel, setLobbyAudioLevel] = useState<number>(0);
@@ -163,6 +184,9 @@ export default function MeetRoomPage() {
   const lobbyVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  const makingOfferRef = useRef<Map<string, boolean>>(new Map());
+  const frameBroadcastIntervalRef = useRef<any>(null);
   const [remoteStreamKeys, setRemoteStreamKeys] = useState<number>(0); // force re-render when remote streams update
 
   // Audio meter
@@ -205,12 +229,7 @@ export default function MeetRoomPage() {
   const [showReactionsPicker, setShowReactionsPicker] = useState<boolean>(false);
 
   // GSL Timer
-  const [gslSpeakers, setGslSpeakers] = useState<string[]>([
-    'France (Executive Board)',
-    'United Kingdom',
-    'United States',
-    'Japan',
-  ]);
+  const [gslSpeakers, setGslSpeakers] = useState<string[]>([]);
   const [gslTime, setGslTime] = useState<number>(90);
   const [gslTimeLeft, setGslTimeLeft] = useState<number>(90);
   const [isGslRunning, setIsGslRunning] = useState<boolean>(false);
@@ -251,16 +270,66 @@ export default function MeetRoomPage() {
 
       if (lobbyVideoRef.current) {
         lobbyVideoRef.current.srcObject = stream;
+        lobbyVideoRef.current.play().catch(() => {});
       }
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(() => {});
       }
+
+      // Propagate new media tracks to all active peer connections
+      syncLocalTracksToPeers();
 
       // Initialize audio level meter
       setupAudioMeter(stream);
     } catch (err) {
       console.warn('Microphone or Camera access restricted:', err);
     }
+  };
+
+  // Helper to synchronize local camera & mic tracks across all WebRTC peer connections
+  const syncLocalTracksToPeers = () => {
+    if (!localStreamRef.current) return;
+    const tracks = localStreamRef.current.getTracks();
+    peerConnectionsRef.current.forEach((pc) => {
+      tracks.forEach((track) => {
+        const senders = pc.getSenders();
+        const existingSender = senders.find((s) => s.track?.kind === track.kind);
+        if (existingSender) {
+          existingSender.replaceTrack(track).catch(() => {});
+        } else {
+          try {
+            pc.addTrack(track, localStreamRef.current!);
+          } catch {}
+        }
+      });
+    });
+  };
+
+  // Helper to flush queued ICE candidates once remote description is set
+  const flushCandidates = async (peerId: string, pc: RTCPeerConnection) => {
+    const queued = pendingCandidatesRef.current.get(peerId);
+    if (queued && queued.length > 0) {
+      for (const cand of queued) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {
+          console.warn('Queued candidate add warning:', e);
+        }
+      }
+      pendingCandidatesRef.current.delete(peerId);
+    }
+  };
+
+  // Broadcast live camera frame snapshot to server fallback
+  const sendVideoFrame = async (frame: string) => {
+    try {
+      await fetch(`/api/rooms/${cleanRoomId}/video-frame`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: localUserId, frame }),
+      });
+    } catch {}
   };
 
   const setupAudioMeter = (stream: MediaStream) => {
@@ -352,7 +421,11 @@ export default function MeetRoomPage() {
     if (localStreamRef.current) {
       localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = next));
     }
+    syncLocalTracksToPeers();
     updateParticipantState({ isVideoOn: next });
+    if (!next) {
+      sendVideoFrame('');
+    }
   };
 
   const toggleHandRaise = () => {
@@ -442,9 +515,37 @@ export default function MeetRoomPage() {
   // ----------------------------------------------------
   // 3. JOINING & LEAVING THE ROOM
   // ----------------------------------------------------
+  // Fetch room metadata & current participant count while in lobby
+  useEffect(() => {
+    if (!isInLobby) return;
+    const checkRoom = async () => {
+      try {
+        const res = await fetch(`/api/rooms/${cleanRoomId}`);
+        const data = await res.json();
+        if (data.room) {
+          setRoomTitle(data.room.title || 'UN Security Council Session');
+          setRoomAgenda(data.room.agenda || 'Multilateral Agenda');
+          setHostId(data.room.hostId || '');
+          setIsLocked(!!data.room.isLocked);
+          setChatDisabled(!!data.room.chatDisabled);
+          setScreenShareDisabled(!!data.room.screenShareDisabled);
+          const activeOthers = (data.room.participants || []).filter((p: Participant) => p.id !== localUserId);
+          setParticipants(activeOthers);
+        }
+      } catch {}
+    };
+    checkRoom();
+    const lobbyTimer = setInterval(checkRoom, 2500);
+    return () => clearInterval(lobbyTimer);
+  }, [isInLobby, cleanRoomId, localUserId]);
+
   const handleJoinMeeting = async () => {
-    localStorage.setItem('mun_user_name', localUserName);
-    localStorage.setItem('mun_user_country', localCountry);
+    const effectiveName = localUserName.trim() || 'Diplomatic Delegate';
+    const effectiveCountry = localCountry.trim() || 'Observer / Delegate';
+    setLocalUserName(effectiveName);
+    setLocalCountry(effectiveCountry);
+    localStorage.setItem('mun_user_name', effectiveName);
+    localStorage.setItem('mun_user_country', effectiveCountry);
 
     try {
       const res = await fetch(`/api/rooms/${cleanRoomId}/join`, {
@@ -452,8 +553,8 @@ export default function MeetRoomPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: localUserId,
-          name: localUserName,
-          country: localCountry,
+          name: effectiveName,
+          country: effectiveCountry,
           role: localRole,
           isMuted: !isMicOn,
           isVideoOn: isVideoOn,
@@ -467,9 +568,9 @@ export default function MeetRoomPage() {
         setIsLocked(!!data.room.isLocked);
         setChatDisabled(!!data.room.chatDisabled);
         setScreenShareDisabled(!!data.room.screenShareDisabled);
-        setParticipants(data.room.participants || []);
+        setParticipants((data.room.participants || []).filter((p: Participant) => p.id !== localUserId));
         setChatMessages(data.room.messages || []);
-        if (data.room.speakersQueue?.length) {
+        if (Array.isArray(data.room.speakersQueue)) {
           setGslSpeakers(data.room.speakersQueue);
         }
       }
@@ -479,7 +580,47 @@ export default function MeetRoomPage() {
 
     soundEffects.playJoinChime();
     setIsInLobby(false);
+    syncLocalTracksToPeers();
   };
+
+  // High-frequency live camera frame broadcaster
+  useEffect(() => {
+    if (isInLobby) return;
+
+    if (frameBroadcastIntervalRef.current) {
+      clearInterval(frameBroadcastIntervalRef.current);
+      frameBroadcastIntervalRef.current = null;
+    }
+
+    if (!isVideoOn) {
+      sendVideoFrame('');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+
+    frameBroadcastIntervalRef.current = setInterval(() => {
+      if (!isVideoOn) return;
+      const videoEl = localVideoRef.current;
+      if (videoEl && videoEl.videoWidth > 0 && !videoEl.paused && ctx) {
+        try {
+          ctx.drawImage(videoEl, 0, 0, 320, 240);
+          const frame = canvas.toDataURL('image/jpeg', 0.45);
+          sendVideoFrame(frame);
+        } catch {}
+      }
+    }, 600);
+
+    return () => {
+      if (frameBroadcastIntervalRef.current) {
+        clearInterval(frameBroadcastIntervalRef.current);
+        frameBroadcastIntervalRef.current = null;
+      }
+    };
+  }, [isInLobby, isVideoOn, cleanRoomId, localUserId]);
 
   const handleLeaveCall = async () => {
     try {
@@ -558,22 +699,49 @@ export default function MeetRoomPage() {
     // Add local tracks to peer connection
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
-        pc.addTrack(track, localStreamRef.current!);
+        try {
+          pc.addTrack(track, localStreamRef.current!);
+        } catch {}
       });
     }
 
     // ICE Candidate handler
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal(remoteUserId, 'candidate', event.candidate);
+        sendSignal(remoteUserId, 'candidate', event.candidate.toJSON());
       }
     };
 
     // On Track received from remote peer
     pc.ontrack = (event) => {
-      const remoteStream = event.streams[0] || new MediaStream([event.track]);
-      remoteStreamsRef.current.set(remoteUserId, remoteStream);
+      let remoteStream = remoteStreamsRef.current.get(remoteUserId);
+      if (!remoteStream) {
+        remoteStream = event.streams[0] || new MediaStream();
+        remoteStreamsRef.current.set(remoteUserId, remoteStream);
+      }
+      if (event.track) {
+        const existingTrack = remoteStream
+          .getTracks()
+          .find((t) => t.id === event.track.id || t.kind === event.track.kind);
+        if (existingTrack && existingTrack.id !== event.track.id) {
+          remoteStream.removeTrack(existingTrack);
+        }
+        if (!remoteStream.getTracks().some((t) => t.id === event.track.id)) {
+          remoteStream.addTrack(event.track);
+        }
+        event.track.onunmute = () => setRemoteStreamKeys((k) => k + 1);
+        event.track.onmute = () => setRemoteStreamKeys((k) => k + 1);
+        event.track.onended = () => setRemoteStreamKeys((k) => k + 1);
+      }
       setRemoteStreamKeys((k) => k + 1);
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        setRemoteStreamKeys((k) => k + 1);
+      } else if (pc.connectionState === 'failed') {
+        pc.restartIce();
+      }
     };
 
     peerConnectionsRef.current.set(remoteUserId, pc);
@@ -625,26 +793,57 @@ export default function MeetRoomPage() {
             setChatMessages(r.messages);
           }
 
-          // Check if user was kicked by host
+          // Heartbeat check: keep local user registered in the room continuously
           const selfExists = (r.participants || []).some((p) => p.id === localUserId);
-          if (!selfExists && participants.length > 0) {
-            alert('You have been removed from the session by the host Dais.');
-            navigate('/meet');
-            return;
+          if (!selfExists) {
+            fetch(`/api/rooms/${cleanRoomId}/join`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: localUserId,
+                name: localUserName.trim() || 'Diplomatic Delegate',
+                country: localCountry.trim() || 'Observer / Delegate',
+                role: localRole,
+                isMuted: !isMicOn,
+                isVideoOn: isVideoOn,
+              }),
+            }).catch(() => {});
           }
 
           // Initiate WebRTC peer connection offers for newly joined participants
           otherParticipants.forEach(async (p) => {
-            if (!peerConnectionsRef.current.has(p.id)) {
-              const pc = createPeerConnection(p.id);
-              // Only one side initiates offer based on ID comparison to avoid collisions
-              if (localUserId > p.id) {
+            let pc = peerConnectionsRef.current.get(p.id);
+            if (!pc) {
+              pc = createPeerConnection(p.id);
+            }
+
+            // Ensure local tracks are attached to this peer connection
+            if (localStreamRef.current) {
+              localStreamRef.current.getTracks().forEach((t) => {
+                const senders = pc!.getSenders();
+                const existing = senders.find((s) => s.track?.kind === t.kind);
+                if (!existing) {
+                  try {
+                    pc!.addTrack(t, localStreamRef.current!);
+                  } catch {}
+                }
+              });
+            }
+
+            // Deterministic polite negotiation: only user with higher ID initiates offer
+            if (localUserId > p.id) {
+              if (pc.signalingState === 'stable' && !makingOfferRef.current.get(p.id)) {
+                makingOfferRef.current.set(p.id, true);
                 try {
                   const offer = await pc.createOffer();
-                  await pc.setLocalDescription(offer);
-                  sendSignal(p.id, 'offer', offer);
+                  if (pc.signalingState === 'stable') {
+                    await pc.setLocalDescription(offer);
+                    sendSignal(p.id, 'offer', offer);
+                  }
                 } catch (e) {
                   console.warn('Error creating WebRTC offer:', e);
+                } finally {
+                  makingOfferRef.current.set(p.id, false);
                 }
               }
             }
@@ -663,17 +862,39 @@ export default function MeetRoomPage() {
             }
 
             if (sig.type === 'offer') {
-              await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-              sendSignal(senderId, 'answer', answer);
-            } else if (sig.type === 'answer') {
-              await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-            } else if (sig.type === 'candidate') {
               try {
-                await pc.addIceCandidate(new RTCIceCandidate(sig.data));
-              } catch (iceErr) {
-                console.warn('ICE candidate addition error:', iceErr);
+                const isCollision = pc.signalingState !== 'stable' || makingOfferRef.current.get(senderId);
+                if (isCollision && localUserId > senderId) {
+                  continue; // polite peer pattern
+                }
+                await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+                await flushCandidates(senderId, pc);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                sendSignal(senderId, 'answer', answer);
+              } catch (e) {
+                console.warn('Error processing remote offer:', e);
+              }
+            } else if (sig.type === 'answer') {
+              try {
+                if (pc.signalingState === 'have-local-offer') {
+                  await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+                  await flushCandidates(senderId, pc);
+                }
+              } catch (e) {
+                console.warn('Error processing remote answer:', e);
+              }
+            } else if (sig.type === 'candidate') {
+              if (!pc.remoteDescription) {
+                const list = pendingCandidatesRef.current.get(senderId) || [];
+                list.push(sig.data);
+                pendingCandidatesRef.current.set(senderId, list);
+              } else {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(sig.data));
+                } catch (iceErr) {
+                  console.warn('ICE candidate addition error:', iceErr);
+                }
               }
             }
           }
@@ -917,7 +1138,9 @@ export default function MeetRoomPage() {
             <div className="space-y-2">
               <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Ready to join?</h2>
               <p className="text-xs sm:text-sm text-slate-400">
-                Configure your delegation profile and join the committee floor.
+                {participants.length === 0
+                  ? 'No one else is here yet — join now to start the session.'
+                  : `${participants.length} participant${participants.length > 1 ? 's' : ''} currently in this room.`}
               </p>
             </div>
 
@@ -928,7 +1151,7 @@ export default function MeetRoomPage() {
                   type="text"
                   value={localUserName}
                   onChange={(e) => setLocalUserName(e.target.value)}
-                  placeholder="e.g. Delegate of France..."
+                  placeholder="Your name (e.g. Delegate Alex, Maria...)"
                   className="w-full rounded-2xl border border-white/15 bg-slate-950 px-4 py-3 text-sm text-white focus:border-cyan-300 focus:outline-none"
                 />
               </div>
@@ -940,7 +1163,7 @@ export default function MeetRoomPage() {
                     type="text"
                     value={localCountry}
                     onChange={(e) => setLocalCountry(e.target.value)}
-                    placeholder="e.g. France"
+                    placeholder="e.g. Canada, Observer..."
                     className="w-full rounded-2xl border border-white/15 bg-slate-950 px-3.5 py-2.5 text-xs text-white focus:border-cyan-300 focus:outline-none"
                   />
                 </div>
@@ -961,8 +1184,7 @@ export default function MeetRoomPage() {
               <div className="pt-2 space-y-3">
                 <button
                   onClick={handleJoinMeeting}
-                  disabled={!localUserName.trim()}
-                  className="w-full rounded-2xl bg-cyan-300 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-cyan-500/20 hover:bg-cyan-200 transition hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
+                  className="w-full rounded-2xl bg-cyan-300 py-4 text-sm font-bold text-slate-950 shadow-xl shadow-cyan-500/20 hover:bg-cyan-200 transition hover:scale-[1.02] active:scale-[0.98]"
                 >
                   Join Meeting Now
                 </button>
@@ -1027,8 +1249,29 @@ export default function MeetRoomPage() {
       <div className="flex-1 flex relative overflow-hidden bg-[#131417]">
         {/* VIDEO TILES GRID */}
         <div
-          className={`flex-1 p-3 sm:p-4 overflow-y-auto grid ${gridClass} gap-3 sm:gap-4 items-center justify-center transition-all duration-300`}
+          className={`flex-1 p-3 sm:p-4 overflow-y-auto grid ${gridClass} gap-3 sm:gap-4 items-center justify-center transition-all duration-300 relative`}
         >
+          {/* Waiting for others banner when alone in room */}
+          {participants.length === 0 && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-2xl">
+              <div className="flex items-center gap-2 text-xs text-slate-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>You're the only one here</span>
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(window.location.href);
+                  setCopiedLink(true);
+                  setTimeout(() => setCopiedLink(false), 2500);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold border border-cyan-400/30 transition"
+              >
+                {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedLink ? 'Link Copied!' : 'Copy Invite Link'}
+              </button>
+            </div>
+          )}
+
           {/* LOCAL USER TILE */}
           <div
             className={`relative w-full aspect-video rounded-3xl overflow-hidden bg-[#202124] border shadow-2xl flex items-center justify-center transition-all ${
@@ -1039,7 +1282,13 @@ export default function MeetRoomPage() {
           >
             {/* Local Video Stream */}
             <video
-              ref={localVideoRef}
+              ref={(el) => {
+                localVideoRef.current = el;
+                if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
+                  el.srcObject = isScreenSharing && screenStreamRef.current ? screenStreamRef.current : localStreamRef.current;
+                  el.play().catch(() => {});
+                }
+              }}
               autoPlay
               playsInline
               muted
@@ -1100,6 +1349,13 @@ export default function MeetRoomPage() {
           {/* REMOTE PARTICIPANTS TILES */}
           {participants.map((p) => {
             const remoteStream = remoteStreamsRef.current.get(p.id);
+            const isParticipantVideoActive = p.isVideoOn !== undefined ? p.isVideoOn : !p.isVideoMuted;
+            const hasLiveWebRtcVideo = !!(
+              remoteStream &&
+              remoteStream.getVideoTracks().length > 0 &&
+              remoteStream.getVideoTracks().some((t) => t.enabled && t.readyState === 'live')
+            );
+            const hasLiveFrame = !!p.videoFrame;
 
             return (
               <div
@@ -1110,27 +1366,60 @@ export default function MeetRoomPage() {
                     : 'border-white/10 hover:border-white/20'
                 }`}
               >
-                {/* Remote Stream Video Element */}
-                {remoteStream && p.isVideoOn ? (
+                {/* Independent Audio Element to ensure remote audio is always heard regardless of video rendering mode */}
+                {remoteStream && remoteStream.getAudioTracks().length > 0 && (
+                  <audio
+                    autoPlay
+                    ref={(el) => {
+                      if (el && remoteStream && el.srcObject !== remoteStream) {
+                        el.srcObject = remoteStream;
+                        el.play().catch(() => {});
+                      }
+                    }}
+                  />
+                )}
+
+                {/* Remote Stream Video Element: Native WebRTC stream with smooth live frame fallback */}
+                {isParticipantVideoActive && hasLiveWebRtcVideo ? (
                   <video
                     autoPlay
                     playsInline
                     ref={(el) => {
-                      if (el && el.srcObject !== remoteStream) {
-                        el.srcObject = remoteStream;
+                      if (el && remoteStream) {
+                        if (el.srcObject !== remoteStream) {
+                          el.srcObject = remoteStream;
+                        }
+                        el.play().catch((err) => console.warn('Remote video play:', err));
                       }
+                    }}
+                    onLoadedMetadata={(e) => {
+                      (e.currentTarget as HTMLVideoElement).play().catch(() => {});
                     }}
                     className="w-full h-full object-cover"
                   />
+                ) : isParticipantVideoActive && hasLiveFrame ? (
+                  <div className="relative w-full h-full">
+                    <img
+                      src={p.videoFrame}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-950/70 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/10 text-[10px] text-emerald-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Live Camera
+                    </div>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2">
                     <div
-                      className={`h-20 w-20 rounded-full ${p.avatarColor} border-2 border-white/20 flex items-center justify-center text-2xl font-extrabold text-white shadow-xl`}
+                      className={`h-20 w-20 rounded-full ${
+                        p.avatarColor || 'bg-gradient-to-tr from-cyan-600 to-blue-600'
+                      } border-2 border-white/20 flex items-center justify-center text-2xl font-extrabold text-white shadow-xl`}
                     >
                       {p.name.charAt(0).toUpperCase()}
                     </div>
                     <p className="text-[11px] font-semibold text-slate-400">
-                      {p.country || 'Delegate'}
+                      {p.country || 'Delegate'} {isParticipantVideoActive ? '(Connecting camera...)' : '(Camera Off)'}
                     </p>
                   </div>
                 )}

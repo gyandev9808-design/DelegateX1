@@ -971,7 +971,7 @@ apiRouter.post('/rooms/create', async (req, res) => {
       type: 'COMMITTEE',
       createdAt: Date.now(),
       hostId,
-      speakersQueue: ['President of the Council (Chair)'],
+      speakersQueue: [],
       currentSpeakerIndex: 0,
       speechDuration: 90,
       timeLeft: 90,
@@ -979,27 +979,13 @@ apiRouter.post('/rooms/create', async (req, res) => {
       isLocked: false,
       chatDisabled: false,
       screenShareDisabled: true,
-      participants: [
-        {
-          id: hostId,
-          name: hostName?.trim() || (storedAccount?.name || 'Secretariat Chair'),
-          country: hostCountry?.trim() || 'Dais / President',
-          role: 'CHAIR',
-          isAudioMuted: false,
-          isVideoMuted: false,
-          isScreenSharing: false,
-          isHandRaised: false,
-          isSpeaking: false,
-          joinedAt: Date.now(),
-          lastSeen: Date.now(),
-        },
-      ],
+      participants: [],
       messages: [
         {
           id: 'msg_welcome_' + Date.now(),
           senderId: 'system',
           senderName: 'DelegateX Floor System',
-          text: `Welcome to the live session. Chamber: ${roomId}. Session online.`,
+          text: `Chamber ${roomId} is initialized. Floor is open.`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isSystem: true,
         },
@@ -1043,7 +1029,7 @@ apiRouter.get('/rooms/:roomId', async (req, res) => {
       type: 'COMMITTEE',
       createdAt: Date.now(),
       hostId: 'system_host',
-      speakersQueue: ['President of the General Assembly'],
+      speakersQueue: [],
       currentSpeakerIndex: 0,
       speechDuration: 90,
       timeLeft: 90,
@@ -1082,10 +1068,10 @@ apiRouter.get('/rooms/:roomId', async (req, res) => {
     }
   }
 
-  // Reap disconnected participants that haven't sent a heartbeat in 45 seconds
+  // Reap disconnected participants that haven't sent a heartbeat within 25 seconds
   const initialCount = room.participants.length;
   room.participants = room.participants.filter(
-    (p) => !p.lastSeen || now - p.lastSeen < 45000 || now - p.joinedAt < 15000
+    (p) => p.lastSeen && now - p.lastSeen < 25000
   );
   if (room.participants.length !== initialCount) {
     modified = true;
@@ -1094,6 +1080,22 @@ apiRouter.get('/rooms/:roomId', async (req, res) => {
   if (modified) {
     await saveRoom(room);
   }
+
+  // Helper to ensure participant fields are uniformly populated for client UI
+  const avatarColors = [
+    'bg-gradient-to-tr from-cyan-600 to-blue-600',
+    'bg-gradient-to-tr from-indigo-600 to-purple-600',
+    'bg-gradient-to-tr from-emerald-600 to-teal-600',
+    'bg-gradient-to-tr from-amber-600 to-orange-600',
+    'bg-gradient-to-tr from-rose-600 to-pink-600',
+  ];
+  room.participants.forEach((p, idx) => {
+    p.isVideoOn = !p.isVideoMuted;
+    p.isMuted = p.isAudioMuted;
+    if (!p.avatarColor) {
+      p.avatarColor = avatarColors[idx % avatarColors.length];
+    }
+  });
 
   return res.json({ room, singleServer: true });
 });
@@ -1133,17 +1135,34 @@ apiRouter.post('/rooms/:roomId/join', async (req, res) => {
   }
 
   const userId = id || 'usr_' + Math.random().toString(36).substring(2, 9);
+  const now = Date.now();
+  // Filter stale participants so room state remains clean
+  room.participants = room.participants.filter(
+    (p) => p.id === userId || (p.lastSeen && now - p.lastSeen < 25000)
+  );
+
   const existingIndex = room.participants.findIndex((p) => p.id === userId);
+  const avatarColors = [
+    'bg-gradient-to-tr from-cyan-600 to-blue-600',
+    'bg-gradient-to-tr from-indigo-600 to-purple-600',
+    'bg-gradient-to-tr from-emerald-600 to-teal-600',
+    'bg-gradient-to-tr from-amber-600 to-orange-600',
+    'bg-gradient-to-tr from-rose-600 to-pink-600',
+  ];
   const participantData: Participant = {
     id: userId,
     name: name?.trim() || 'Delegate',
     country: country?.trim() || (role === 'CHAIR' ? 'Executive Board' : 'Observer Delegation'),
     role: role || 'DELEGATE',
+    avatarColor: avatarColors[Math.abs(userId.charCodeAt(0) || 0) % avatarColors.length],
     isAudioMuted: isMuted ?? false,
     isVideoMuted: !(isVideoOn ?? true),
+    isMuted: isMuted ?? false,
+    isVideoOn: isVideoOn ?? true,
     isScreenSharing: false,
     isHandRaised: false,
     isSpeaking: false,
+    videoFrame: '',
     joinedAt: Date.now(),
     lastSeen: Date.now(),
   };
@@ -1260,7 +1279,7 @@ apiRouter.delete('/rooms/:roomId/messages', async (req, res) => {
 // POST /api/rooms/:roomId/participant-state - Update Participant Media State
 apiRouter.post('/rooms/:roomId/participant-state', async (req, res) => {
   const { roomId } = req.params;
-  const { userId, isMuted, isVideoOn, isHandRaised, isSpeaking } = req.body;
+  const { userId, isMuted, isVideoOn, isHandRaised, isSpeaking, videoFrame } = req.body;
   const cleanId = roomId.toLowerCase().trim();
 
   const room = await getRoom(cleanId);
@@ -1270,15 +1289,48 @@ apiRouter.post('/rooms/:roomId/participant-state', async (req, res) => {
 
   const p = room.participants.find((item) => item.id === userId);
   if (p) {
-    if (typeof isMuted === 'boolean') p.isAudioMuted = isMuted;
-    if (typeof isVideoOn === 'boolean') p.isVideoMuted = !isVideoOn;
+    if (typeof isMuted === 'boolean') {
+      p.isAudioMuted = isMuted;
+      p.isMuted = isMuted;
+    }
+    if (typeof isVideoOn === 'boolean') {
+      p.isVideoMuted = !isVideoOn;
+      p.isVideoOn = isVideoOn;
+      if (!isVideoOn) {
+        p.videoFrame = '';
+      }
+    }
     if (typeof isHandRaised === 'boolean') p.isHandRaised = isHandRaised;
     if (typeof isSpeaking === 'boolean') p.isSpeaking = isSpeaking;
+    if (typeof videoFrame === 'string') p.videoFrame = videoFrame;
     p.lastSeen = Date.now();
     await saveRoom(room);
   }
 
   return res.json({ success: true, participant: p });
+});
+
+// POST /api/rooms/:roomId/video-frame - High performance camera snapshot stream fallback
+apiRouter.post('/rooms/:roomId/video-frame', async (req, res) => {
+  const { roomId } = req.params;
+  const { userId, frame } = req.body;
+  const cleanId = roomId.toLowerCase().trim();
+
+  const room = await getRoom(cleanId);
+  if (!room) {
+    return res.status(404).json({ error: 'Room not found' });
+  }
+
+  const p = room.participants.find((item) => item.id === userId);
+  if (p) {
+    p.videoFrame = typeof frame === 'string' ? frame : '';
+    p.isVideoMuted = !frame;
+    p.isVideoOn = !!frame;
+    p.lastSeen = Date.now();
+    await saveRoom(room);
+  }
+
+  return res.json({ success: true });
 });
 
 // POST /api/rooms/:roomId/floor-state - Update Committee State (GSL Queue, Timers)
@@ -1439,9 +1491,8 @@ apiRouter.all('*', (req, res) => {
   return res.status(404).json({ error: `Endpoint ${req.method} ${req.path} not found` });
 });
 
-// Mount the API Router on both /api AND as root fallback
+// Mount the API Router on /api
 app.use('/api', apiRouter);
-app.use(apiRouter);
 
 // Persistent background meeting room clock tick (when running as persistent container or local dev)
 if (!process.env.VERCEL) {

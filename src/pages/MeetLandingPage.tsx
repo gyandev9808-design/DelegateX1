@@ -69,7 +69,7 @@ export default function MeetLandingPage() {
             title: m.title,
             committee: m.title?.substring(0, 4)?.toUpperCase() || 'MUN',
             agenda: m.topic || 'General Committee Debate',
-            participantsCount: 1,
+            participantsCount: m.participantsCount || 0,
           }));
         }
       }
@@ -102,7 +102,7 @@ export default function MeetLandingPage() {
               title: m.title,
               committee: m.title?.substring(0, 4)?.toUpperCase() || 'MUN',
               agenda: m.topic || 'General Committee Debate',
-              participantsCount: 1,
+              participantsCount: m.participantsCount || 0,
             }));
           }
         }
@@ -119,7 +119,7 @@ export default function MeetLandingPage() {
                 title: r.title,
                 committee: r.committee || r.title?.substring(0, 4)?.toUpperCase() || 'UNSC',
                 agenda: r.agenda,
-                participantsCount: r.participantsCount || 1,
+                participantsCount: typeof r.participantsCount === 'number' ? r.participantsCount : 0,
               }));
               setActiveRooms(serverRooms);
             } else {

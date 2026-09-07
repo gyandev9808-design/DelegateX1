@@ -27,11 +27,15 @@ export interface Participant {
   name: string;
   role: 'DELEGATE' | 'CHAIR' | 'OBSERVER';
   country: string;
+  avatarColor?: string;
   isAudioMuted: boolean;
   isVideoMuted: boolean;
+  isMuted?: boolean;
+  isVideoOn?: boolean;
   isScreenSharing: boolean;
   isHandRaised: boolean;
   isSpeaking?: boolean;
+  videoFrame?: string;
   joinedAt: number;
   lastSeen?: number;
 }
@@ -233,6 +237,12 @@ export async function ensureDb(): Promise<void> {
           breakouts JSONB DEFAULT '[]'::jsonb,
           updated_at BIGINT DEFAULT 0
         );
+      `;
+
+      // Purge any stale ghost participants or signals from previous sessions so all meetings start clean
+      await sql`
+        UPDATE meeting_rooms 
+        SET participants = '[]'::jsonb, signals = '[]'::jsonb, speakers_queue = '[]'::jsonb;
       `;
 
       // Check if users exist; if not, seed defaults
@@ -480,7 +490,11 @@ export async function getRoom(roomId: string): Promise<RoomState | null> {
       timeLeft: Number(r.timeLeft ?? 90),
       isTimerRunning: Boolean(r.isTimerRunning),
       timerStartedAt: Number(r.timerStartedAt || 0),
-      participants: Array.isArray(r.participants) ? r.participants : [],
+      participants: Array.isArray(r.participants)
+        ? (r.participants as Participant[]).filter(
+            (p) => p.lastSeen && Date.now() - Number(p.lastSeen) < 25000
+          )
+        : [],
       messages: Array.isArray(r.messages) ? r.messages : [],
       signals: Array.isArray(r.signals) ? r.signals : [],
       breakouts: Array.isArray(r.breakouts) ? r.breakouts : [],
@@ -614,7 +628,11 @@ export async function getAllRooms(): Promise<RoomState[]> {
         timeLeft: Number(r.timeLeft ?? 90),
         isTimerRunning: Boolean(r.isTimerRunning),
         timerStartedAt: Number(r.timerStartedAt || 0),
-        participants: Array.isArray(r.participants) ? r.participants : [],
+        participants: Array.isArray(r.participants)
+          ? (r.participants as Participant[]).filter(
+              (p) => p.lastSeen && Date.now() - Number(p.lastSeen) < 25000
+            )
+          : [],
         messages: Array.isArray(r.messages) ? r.messages : [],
         signals: Array.isArray(r.signals) ? r.signals : [],
         breakouts: Array.isArray(r.breakouts) ? r.breakouts : [],
