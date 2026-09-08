@@ -19,6 +19,9 @@ import {
   saveRoom,
   deleteRoomById,
   getAllRooms,
+  getAllNotifications,
+  saveNotification,
+  deleteNotificationById,
   getDatabaseStatus,
   ensureDb,
   type StoredUser,
@@ -27,6 +30,7 @@ import {
   type ChatMessage,
   type SignalMessage,
   type PasswordResetEntry,
+  type ServerNotification,
 } from './serverDb';
 
 dotenv.config();
@@ -1484,6 +1488,90 @@ apiRouter.post('/rooms/:roomId/host-action', async (req, res) => {
 
   await saveRoom(room);
   return res.json({ success: true, room });
+});
+
+// ==========================================
+// NOTIFICATIONS API
+// ==========================================
+
+// GET /api/notifications - List all notifications (including live meeting rooms with direct links)
+apiRouter.get('/notifications', async (req, res) => {
+  try {
+    const rooms = await getAllRooms();
+    const storedNotifs = await getAllNotifications();
+
+    const host = req.get('host') || 'localhost:3000';
+    const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const baseUrl = `${proto}://${host}`;
+
+    // Auto-generate active room notifications with full direct meeting links
+    const roomNotifs: ServerNotification[] = rooms.map((r) => {
+      const cleanId = r.id.toLowerCase().trim();
+      return {
+        id: `notif_room_${cleanId}`,
+        title: `Chamber Convened: ${r.title || 'UN Committee Session'}`,
+        message: `Secretariat has initialized room: ${cleanId}. Agenda: ${r.agenda || 'General Multilateral Debate'}. Direct meeting link available below.`,
+        time: 'Active now',
+        type: 'alert',
+        link: `/meet/${cleanId}`,
+        roomCode: cleanId,
+        meetingUrl: `${baseUrl}/meet/${cleanId}`,
+        createdAt: r.createdAt || Date.now(),
+      };
+    });
+
+    const combined = [...roomNotifs];
+    for (const notif of storedNotifs) {
+      if (!combined.some((n) => n.id === notif.id)) {
+        combined.push(notif);
+      }
+    }
+
+    combined.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return res.json({ notifications: combined });
+  } catch (err) {
+    console.error('Failed to get notifications:', err);
+    return res.status(500).json({ error: 'Failed to retrieve notifications' });
+  }
+});
+
+// POST /api/notifications/broadcast - Broadcast meeting room link or announcement to all delegates
+apiRouter.post('/notifications/broadcast', async (req, res) => {
+  try {
+    const { title, message, link, roomCode, meetingUrl, type } = req.body;
+    const host = req.get('host') || 'localhost:3000';
+    const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+    const baseUrl = `${proto}://${host}`;
+
+    const cleanCode = roomCode ? roomCode.toLowerCase().trim() : '';
+    const directLink = link || (cleanCode ? `/meet/${cleanCode}` : '/meet');
+    const directUrl = meetingUrl || `${baseUrl}${directLink}`;
+
+    const notif: ServerNotification = {
+      id: cleanCode ? `notif_room_${cleanCode}` : `notif_broadcast_${Date.now()}`,
+      title: title || 'Live Committee Session Floor Link',
+      message: message || `Meeting room link is live for ${cleanCode || 'committee session'}. Click to join.`,
+      time: 'Just now',
+      type: type || 'alert',
+      link: directLink,
+      roomCode: cleanCode,
+      meetingUrl: directUrl,
+      createdAt: Date.now(),
+    };
+
+    await saveNotification(notif);
+    return res.status(201).json({ success: true, notification: notif });
+  } catch (err) {
+    console.error('Failed to broadcast notification:', err);
+    return res.status(500).json({ error: 'Failed to broadcast notification' });
+  }
+});
+
+// DELETE /api/notifications/:id - Dismiss/delete notification
+apiRouter.delete('/notifications/:id', async (req, res) => {
+  const { id } = req.params;
+  const deleted = await deleteNotificationById(id);
+  return res.json({ success: true, deleted });
 });
 
 // Fallback JSON 404 handler for unmatched /api requests

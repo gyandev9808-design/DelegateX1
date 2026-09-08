@@ -34,7 +34,9 @@ import {
   Crown,
   Sparkles,
   ExternalLink,
+  Bell,
 } from 'lucide-react';
+import { addMeetingRoomNotification } from '../utils/notifications';
 import { soundEffects } from '../components/meet/AudioChimes';
 import DeviceSettingsModal, { DeviceSettings } from '../components/meet/DeviceSettingsModal';
 import WhiteboardModal from '../components/meet/WhiteboardModal';
@@ -511,6 +513,50 @@ export default function MeetRoomPage() {
       setIsFullscreen(false);
     }
   };
+
+  const [broadcastedToNotifications, setBroadcastedToNotifications] = useState<boolean>(false);
+
+  const broadcastLinkToNotifications = async () => {
+    const meetingUrl = `${window.location.origin}/meet/${cleanRoomId}`;
+    try {
+      await fetch('/api/notifications/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `Chamber Convened: ${roomTitle || 'Official Committee Session'}`,
+          message: `Floor is live in chamber ${cleanRoomId}. Agenda: ${roomAgenda || 'General Committee Debate'}. Link is ready in your notifications bar.`,
+          roomCode: cleanRoomId,
+          link: `/meet/${cleanRoomId}`,
+          meetingUrl,
+          type: 'alert',
+        }),
+      });
+
+      addMeetingRoomNotification({
+        code: cleanRoomId,
+        title: roomTitle || 'Official Committee Session',
+        topic: roomAgenda || 'General Debate',
+        meetingUrl,
+      });
+
+      setBroadcastedToNotifications(true);
+      setTimeout(() => setBroadcastedToNotifications(false), 3000);
+    } catch (e) {
+      console.warn('Failed to broadcast notification:', e);
+    }
+  };
+
+  // Automatically register this active meeting into delegate notifications
+  useEffect(() => {
+    if (!cleanRoomId) return;
+    const meetingUrl = `${window.location.origin}/meet/${cleanRoomId}`;
+    addMeetingRoomNotification({
+      code: cleanRoomId,
+      title: roomTitle || 'Official Committee Session',
+      topic: roomAgenda || 'General Debate',
+      meetingUrl,
+    });
+  }, [cleanRoomId, roomTitle, roomAgenda]);
 
   // ----------------------------------------------------
   // 3. JOINING & LEAVING THE ROOM
@@ -1253,22 +1299,36 @@ export default function MeetRoomPage() {
         >
           {/* Waiting for others banner when alone in room */}
           {participants.length === 0 && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-slate-900/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 shadow-2xl">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-2.5 bg-slate-900/95 backdrop-blur-md px-4 py-2 rounded-2xl border border-cyan-400/30 shadow-2xl">
               <div className="flex items-center gap-2 text-xs text-slate-300">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>You're the only one here</span>
+                <span>You're the only one on the floor</span>
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(window.location.href);
-                  setCopiedLink(true);
-                  setTimeout(() => setCopiedLink(false), 2500);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold border border-cyan-400/30 transition"
-              >
-                {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                {copiedLink ? 'Link Copied!' : 'Copy Invite Link'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2500);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold border border-cyan-400/30 transition cursor-pointer"
+                >
+                  {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedLink ? 'Link Copied!' : 'Copy Invite Link'}
+                </button>
+                <button
+                  onClick={broadcastLinkToNotifications}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-xs font-semibold border border-purple-400/30 transition cursor-pointer"
+                  title="Send this meeting link directly to delegates' notification bars"
+                >
+                  {broadcastedToNotifications ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Bell className="h-3.5 w-3.5" />
+                  )}
+                  {broadcastedToNotifications ? 'Link Sent to Notifications!' : 'Push Link to Notifications Bar'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -1843,13 +1903,28 @@ export default function MeetRoomPage() {
                     <p className="font-mono text-xs text-cyan-300 break-all">
                       {window.location.origin}/meet/{cleanRoomId}
                     </p>
-                    <button
-                      onClick={copyMeetingLink}
-                      className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-800 text-slate-200 hover:text-white text-xs font-semibold transition"
-                    >
-                      {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                      <span>{copiedLink ? 'Link copied' : 'Copy joining info'}</span>
-                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={copyMeetingLink}
+                        className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-850 border border-white/10 text-slate-200 hover:text-white hover:bg-slate-800 text-xs font-semibold transition cursor-pointer"
+                      >
+                        {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                        <span>{copiedLink ? 'Link copied' : 'Copy link'}</span>
+                      </button>
+
+                      <button
+                        onClick={broadcastLinkToNotifications}
+                        className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold border border-cyan-400/30 transition cursor-pointer"
+                        title="Broadcast link to delegates' notifications bar"
+                      >
+                        {broadcastedToNotifications ? (
+                          <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        ) : (
+                          <Bell className="h-3.5 w-3.5" />
+                        )}
+                        <span>{broadcastedToNotifications ? 'Notified!' : 'Send to Bar'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

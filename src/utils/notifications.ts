@@ -7,10 +7,19 @@ export interface DelegateNotification {
   read: boolean;
   link?: string;
   roomCode?: string;
+  meetingUrl?: string;
   createdAt: number;
 }
 
 const STORAGE_KEY = 'mun_delegate_notifications';
+
+export function formatMeetingUrl(roomCode: string): string {
+  const clean = roomCode.toLowerCase().trim();
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/meet/${clean}`;
+  }
+  return `/meet/${clean}`;
+}
 
 const defaultStaticNotifications: DelegateNotification[] = [
   {
@@ -65,24 +74,28 @@ export function addMeetingRoomNotification(room: {
   code: string;
   title: string;
   topic?: string;
+  meetingUrl?: string;
 }): DelegateNotification {
   const current = getStoredNotifications();
-  const id = `notif_room_${room.code.toLowerCase().trim()}`;
+  const cleanCode = room.code.toLowerCase().trim();
+  const id = `notif_room_${cleanCode}`;
+  const meetingUrl = room.meetingUrl || formatMeetingUrl(cleanCode);
 
   // Check if notification for this room code already exists
   const existingIndex = current.findIndex(
-    (n) => n.id === id || n.roomCode?.toLowerCase() === room.code.toLowerCase()
+    (n) => n.id === id || n.roomCode?.toLowerCase() === cleanCode
   );
 
   const notification: DelegateNotification = {
     id,
     title: `Chamber Convened: ${room.title.trim()}`,
-    message: `Secretariat has initialized room code: ${room.code}. Agenda: ${room.topic || 'General Committee Debate'}. Click to enter the chamber floor.`,
+    message: `Secretariat has initialized room code: ${cleanCode}. Agenda: ${room.topic || 'General Committee Debate'}. Meeting link is ready to join or copy.`,
     time: 'Just now',
     type: 'alert',
     read: false,
-    link: `/room/${room.code.toLowerCase().trim()}`,
-    roomCode: room.code.toLowerCase().trim(),
+    link: `/meet/${cleanCode}`,
+    roomCode: cleanCode,
+    meetingUrl,
     createdAt: Date.now(),
   };
 
@@ -99,7 +112,7 @@ export function addMeetingRoomNotification(room: {
 }
 
 export function syncActiveMeetingNotifications(
-  rooms: Array<{ code?: string; id?: string; title: string; topic?: string; agenda?: string }>
+  rooms: Array<{ code?: string; id?: string; title: string; topic?: string; agenda?: string; meetingUrl?: string }>
 ): DelegateNotification[] {
   const current = getStoredNotifications();
   let modified = false;
@@ -110,21 +123,35 @@ export function syncActiveMeetingNotifications(
     if (!code) return;
 
     const notifId = `notif_room_${code}`;
-    const exists = list.some((n) => n.id === notifId || n.roomCode?.toLowerCase() === code);
+    const directUrl = room.meetingUrl || formatMeetingUrl(code);
+    const existingIndex = list.findIndex((n) => n.id === notifId || n.roomCode?.toLowerCase() === code);
 
-    if (!exists) {
+    if (existingIndex === -1) {
       list.unshift({
         id: notifId,
         title: `Chamber Convened: ${room.title || 'Official Committee Session'}`,
-        message: `Secretariat has initialized room code: ${code}. Agenda: ${room.topic || room.agenda || 'General Committee Debate'}. Click to enter floor.`,
+        message: `Secretariat has initialized room code: ${code}. Agenda: ${room.topic || room.agenda || 'General Committee Debate'}. Direct link is live below.`,
         time: 'Active now',
         type: 'alert',
         read: false,
-        link: `/room/${code}`,
+        link: `/meet/${code}`,
         roomCode: code,
+        meetingUrl: directUrl,
         createdAt: Date.now(),
       });
       modified = true;
+    } else {
+      // Ensure meetingUrl and canonical link are up to date
+      const item = list[existingIndex];
+      if (!item.meetingUrl || item.meetingUrl !== directUrl) {
+        list[existingIndex] = {
+          ...item,
+          link: `/meet/${code}`,
+          roomCode: code,
+          meetingUrl: directUrl,
+        };
+        modified = true;
+      }
     }
   });
 
@@ -132,6 +159,37 @@ export function syncActiveMeetingNotifications(
     saveStoredNotifications(list);
   }
   return list;
+}
+
+export async function fetchServerNotifications(): Promise<DelegateNotification[]> {
+  try {
+    const res = await fetch('/api/notifications');
+    if (!res.ok) return getStoredNotifications();
+    const data = await res.json();
+    if (Array.isArray(data.notifications)) {
+      const local = getStoredNotifications();
+      const localReadMap = new Map(local.map((n) => [n.id, n.read]));
+
+      const merged: DelegateNotification[] = data.notifications.map((serverN: any) => ({
+        ...serverN,
+        read: localReadMap.has(serverN.id) ? localReadMap.get(serverN.id)! : Boolean(serverN.read),
+      }));
+
+      // Also keep local notifications that are not on server
+      for (const loc of local) {
+        if (!merged.some((m) => m.id === loc.id)) {
+          merged.push(loc);
+        }
+      }
+
+      merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      saveStoredNotifications(merged);
+      return merged;
+    }
+  } catch (e) {
+    // Ignore error and return local
+  }
+  return getStoredNotifications();
 }
 
 export function markNotificationAsRead(id: string): void {

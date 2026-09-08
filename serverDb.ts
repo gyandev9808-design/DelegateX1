@@ -83,6 +83,18 @@ export interface RoomState {
   breakouts: { id: string; name: string }[];
 }
 
+export interface ServerNotification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  type: 'info' | 'alert' | 'success' | 'ai';
+  link?: string;
+  roomCode?: string;
+  meetingUrl?: string;
+  createdAt: number;
+}
+
 export const seedAccounts = [
   {
     id: 'admin_gyan_01',
@@ -138,6 +150,7 @@ export const seedAccounts = [
 const memUsers = new Map<string, StoredUser>();
 const memResets = new Map<string, PasswordResetEntry>();
 const memRooms = new Map<string, RoomState>();
+const memNotifications = new Map<string, ServerNotification>();
 
 // Pre-populate memory store with seed accounts
 seedAccounts.forEach((acc) => {
@@ -236,6 +249,20 @@ export async function ensureDb(): Promise<void> {
           signals JSONB DEFAULT '[]'::jsonb,
           breakouts JSONB DEFAULT '[]'::jsonb,
           updated_at BIGINT DEFAULT 0
+        );
+      `;
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS delegate_notifications (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          time TEXT,
+          type TEXT,
+          link TEXT,
+          room_code TEXT,
+          meeting_url TEXT,
+          created_at BIGINT NOT NULL
         );
       `;
 
@@ -643,6 +670,74 @@ export async function getAllRooms(): Promise<RoomState[]> {
   } catch (err) {
     console.error('Error fetching all rooms from Neon:', err);
     return Array.from(memRooms.values());
+  }
+}
+
+export async function getAllNotifications(): Promise<ServerNotification[]> {
+  const sql = getSql();
+  if (!sql) {
+    return Array.from(memNotifications.values()).sort((a, b) => b.createdAt - a.createdAt);
+  }
+  await ensureDb();
+  try {
+    const rows = await sql`
+      SELECT id, title, message, time, type, link, room_code as "roomCode", meeting_url as "meetingUrl", created_at as "createdAt"
+      FROM delegate_notifications
+      ORDER BY created_at DESC
+      LIMIT 50;
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      message: r.message,
+      time: r.time || 'Active now',
+      type: (r.type as any) || 'info',
+      link: r.link,
+      roomCode: r.roomCode,
+      meetingUrl: r.meetingUrl,
+      createdAt: Number(r.createdAt || Date.now()),
+    }));
+  } catch (err) {
+    console.error('Error fetching notifications from Neon:', err);
+    return Array.from(memNotifications.values()).sort((a, b) => b.createdAt - a.createdAt);
+  }
+}
+
+export async function saveNotification(notif: ServerNotification): Promise<void> {
+  memNotifications.set(notif.id, notif);
+  const sql = getSql();
+  if (!sql) return;
+  await ensureDb();
+  try {
+    await sql`
+      INSERT INTO delegate_notifications (id, title, message, time, type, link, room_code, meeting_url, created_at)
+      VALUES (${notif.id}, ${notif.title}, ${notif.message}, ${notif.time}, ${notif.type}, ${notif.link || ''}, ${notif.roomCode || ''}, ${notif.meetingUrl || ''}, ${notif.createdAt})
+      ON CONFLICT (id) DO UPDATE SET
+        title = EXCLUDED.title,
+        message = EXCLUDED.message,
+        time = EXCLUDED.time,
+        type = EXCLUDED.type,
+        link = EXCLUDED.link,
+        room_code = EXCLUDED.room_code,
+        meeting_url = EXCLUDED.meeting_url,
+        created_at = EXCLUDED.created_at;
+    `;
+  } catch (err) {
+    console.error('Error saving notification to Neon:', err);
+  }
+}
+
+export async function deleteNotificationById(id: string): Promise<boolean> {
+  memNotifications.delete(id);
+  const sql = getSql();
+  if (!sql) return true;
+  await ensureDb();
+  try {
+    await sql`DELETE FROM delegate_notifications WHERE id = ${id}`;
+    return true;
+  } catch (err) {
+    console.error('Error deleting notification from Neon:', err);
+    return false;
   }
 }
 
