@@ -63,14 +63,22 @@ export default function Navbar() {
       {isAuthenticated && user ? (
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Link
-            to="/auth"
+            to={user.role === 'ADMIN' || user.role === 'MASTER_ADMIN' || user.role === 'CHAIR' ? '/admin' : '/dashboard'}
             className="flex items-center gap-1.5 rounded-full bg-white/5 border border-white/10 hover:border-cyan-400/40 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white transition"
-            title="View Account Profile"
+            title={user.role === 'ADMIN' || user.role === 'MASTER_ADMIN' ? 'Secretariat Administrator Console' : user.role === 'CHAIR' ? 'Executive Board Chair Console' : 'Delegate Dashboard'}
           >
-            <div className="h-5 w-5 rounded-full bg-cyan-400/20 border border-cyan-400/40 flex items-center justify-center text-[10px] font-bold text-cyan-300">
+            <div className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+              user.role === 'ADMIN' || user.role === 'MASTER_ADMIN'
+                ? 'bg-amber-400/20 border border-amber-400/40 text-amber-300'
+                : user.role === 'CHAIR'
+                ? 'bg-emerald-400/20 border border-emerald-400/40 text-emerald-300'
+                : 'bg-cyan-400/20 border border-cyan-400/40 text-cyan-300'
+            }`}>
               {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
-            <span className="hidden sm:inline max-w-[90px] truncate">{user.name || 'Account'}</span>
+            <span className="hidden sm:inline max-w-[110px] truncate">
+              {user.name || (user.role === 'ADMIN' ? 'Secretariat Admin' : 'Delegate')}
+            </span>
           </Link>
           <button
             onClick={logout}

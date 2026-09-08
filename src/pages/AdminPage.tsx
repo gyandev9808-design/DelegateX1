@@ -28,6 +28,7 @@ import {
   LogIn,
   User,
   Sparkles,
+  Radio,
 } from 'lucide-react';
 import { StaffAccount, MeetingRoom } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -412,15 +413,15 @@ export default function AdminPage() {
           {isAuthenticated && user ? (
             <div className="flex items-center gap-2">
               <Link
-                to="/dashboard"
+                to="/committee"
                 className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-950/40 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-cyan-900/50 transition"
               >
-                <LayoutDashboard className="h-3.5 w-3.5" />
-                <span>Delegate Dashboard</span>
+                <Radio className="h-3.5 w-3.5" />
+                <span>Floor Chamber</span>
               </Link>
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <span>{user.name || 'Delegate'} ({user.role})</span>
+                <span className="h-2 w-2 rounded-full bg-amber-400" />
+                <span>{user.name || 'Admin'} ({user.role})</span>
               </div>
             </div>
           ) : (
@@ -429,7 +430,7 @@ export default function AdminPage() {
               className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-300 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-sm"
             >
               <LogIn className="h-3.5 w-3.5" />
-              <span>Delegate / Staff Sign In</span>
+              <span>Staff Sign In</span>
             </Link>
           )}
 

@@ -59,6 +59,13 @@ export default function DashboardPage() {
     }
   });
 
+  // Admins do not have delegate accounts - redirect to Secretariat Admin Console
+  useEffect(() => {
+    if (user && (user.role === 'ADMIN' || user.role === 'MASTER_ADMIN' || user.role === 'CHAIR')) {
+      navigate('/admin', { replace: true });
+    }
+  }, [user, navigate]);
+
   useEffect(() => {
     const syncMeetings = () => {
       let localList: DashboardMeeting[] = [];

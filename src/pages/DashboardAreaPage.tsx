@@ -1,6 +1,7 @@
-import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, LayoutDashboard, Sparkles, CheckCircle2 } from 'lucide-react';
 
 const areaNames: Record<string, string> = {
@@ -15,7 +16,15 @@ const areaNames: Record<string, string> = {
 
 export default function DashboardAreaPage() {
   const { area } = useParams<{ area: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const title = (area && areaNames[area]) || 'Delegate Workspace';
+
+  useEffect(() => {
+    if (user && (user.role === 'ADMIN' || user.role === 'MASTER_ADMIN' || user.role === 'CHAIR')) {
+      navigate('/admin', { replace: true });
+    }
+  }, [user, navigate]);
 
   return (
     <div className="delegate-page min-h-screen text-slate-100 pt-24 pb-16 flex flex-col">

@@ -465,10 +465,18 @@ const handleRegister = async (req: express.Request, res: express.Response) => {
     const cleanEmail = email.trim().toLowerCase();
     const existingUser = await getUserByEmail(cleanEmail);
     if (existingUser) {
+      if (existingUser.role === 'ADMIN' || existingUser.role === 'MASTER_ADMIN' || existingUser.role === 'CHAIR') {
+        return res.status(409).json({ error: 'This email is already configured as a Secretariat Admin/Chair account and cannot have a delegate account.' });
+      }
       return res.status(409).json({ error: 'An account with this email address already exists. Please sign in or use password reset.' });
     }
 
-    let assignedRole: 'MASTER_ADMIN' | 'ADMIN' | 'CHAIR' | 'DELEGATE' = role || (cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin') ? 'ADMIN' : 'DELEGATE');
+    const isAdminIdentifier = cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin') || cleanEmail.includes('chair');
+    if (isAdminIdentifier && role === 'DELEGATE') {
+      return res.status(400).json({ error: 'Administrator and Executive Board emails are reserved for Secretariat access and cannot create delegate accounts.' });
+    }
+
+    let assignedRole: 'MASTER_ADMIN' | 'ADMIN' | 'CHAIR' | 'DELEGATE' = role || (cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : cleanEmail.includes('admin') ? 'ADMIN' : 'DELEGATE');
 
     if (assignedRole === 'ADMIN' || assignedRole === 'MASTER_ADMIN' || assignedRole === 'CHAIR') {
       const cleanKey = (secretariatPasskey || '').trim();
