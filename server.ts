@@ -22,6 +22,9 @@ import {
   getAllNotifications,
   saveNotification,
   deleteNotificationById,
+  getDismissedNotificationIds,
+  dismissNotification,
+  dismissAllNotifications,
   getDatabaseStatus,
   ensureDb,
   type StoredUser,
@@ -1499,26 +1502,32 @@ apiRouter.get('/notifications', async (req, res) => {
   try {
     const rooms = await getAllRooms();
     const storedNotifs = await getAllNotifications();
+    const dismissed = await getDismissedNotificationIds();
 
     const host = req.get('host') || 'localhost:3000';
     const proto = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
     const baseUrl = `${proto}://${host}`;
 
-    // Auto-generate active room notifications with full direct meeting links
-    const roomNotifs: ServerNotification[] = rooms.map((r) => {
-      const cleanId = r.id.toLowerCase().trim();
-      return {
-        id: `notif_room_${cleanId}`,
-        title: `Chamber Convened: ${r.title || 'UN Committee Session'}`,
-        message: `Secretariat has initialized room: ${cleanId}. Agenda: ${r.agenda || 'General Multilateral Debate'}. Direct meeting link available below.`,
-        time: 'Active now',
-        type: 'alert',
-        link: `/meet/${cleanId}`,
-        roomCode: cleanId,
-        meetingUrl: `${baseUrl}/meet/${cleanId}`,
-        createdAt: r.createdAt || Date.now(),
-      };
-    });
+    // Auto-generate active room notifications with full direct meeting links (only if not permanently dismissed)
+    const roomNotifs: ServerNotification[] = rooms
+      .filter((r) => {
+        const cleanId = r.id.toLowerCase().trim();
+        return !dismissed.has(`notif_room_${cleanId}`) && !dismissed.has(cleanId);
+      })
+      .map((r) => {
+        const cleanId = r.id.toLowerCase().trim();
+        return {
+          id: `notif_room_${cleanId}`,
+          title: `Chamber Convened: ${r.title || 'UN Committee Session'}`,
+          message: `Secretariat has initialized room: ${cleanId}. Agenda: ${r.agenda || 'General Multilateral Debate'}. Direct meeting link available below.`,
+          time: 'Active now',
+          type: 'alert',
+          link: `/meet/${cleanId}`,
+          roomCode: cleanId,
+          meetingUrl: `${baseUrl}/meet/${cleanId}`,
+          createdAt: r.createdAt || Date.now(),
+        };
+      });
 
     const combined = [...roomNotifs];
     for (const notif of storedNotifs) {
@@ -1567,7 +1576,27 @@ apiRouter.post('/notifications/broadcast', async (req, res) => {
   }
 });
 
-// DELETE /api/notifications/:id - Dismiss/delete notification
+// DELETE /api/notifications - Clear all notifications permanently
+apiRouter.delete('/notifications', async (req, res) => {
+  try {
+    const stored = await getAllNotifications();
+    const rooms = await getAllRooms();
+    const allIds = [
+      ...stored.map((s) => s.id),
+      ...rooms.map((r) => `notif_room_${r.id.toLowerCase().trim()}`),
+      ...rooms.map((r) => r.id.toLowerCase().trim()),
+      'notif-rop-rules',
+      'notif-ai-clarifier',
+    ];
+    await dismissAllNotifications(allIds);
+    return res.json({ success: true, cleared: true });
+  } catch (err) {
+    console.error('Failed to clear notifications:', err);
+    return res.status(500).json({ error: 'Failed to clear notifications' });
+  }
+});
+
+// DELETE /api/notifications/:id - Dismiss/delete notification permanently
 apiRouter.delete('/notifications/:id', async (req, res) => {
   const { id } = req.params;
   const deleted = await deleteNotificationById(id);

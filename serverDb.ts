@@ -151,6 +151,7 @@ const memUsers = new Map<string, StoredUser>();
 const memResets = new Map<string, PasswordResetEntry>();
 const memRooms = new Map<string, RoomState>();
 const memNotifications = new Map<string, ServerNotification>();
+const memDismissedNotifications = new Set<string>();
 
 // Pre-populate memory store with seed accounts
 seedAccounts.forEach((acc) => {
@@ -263,6 +264,13 @@ export async function ensureDb(): Promise<void> {
           room_code TEXT,
           meeting_url TEXT,
           created_at BIGINT NOT NULL
+        );
+      `;
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS dismissed_notifications (
+          id TEXT PRIMARY KEY,
+          dismissed_at BIGINT NOT NULL
         );
       `;
 
@@ -673,10 +681,89 @@ export async function getAllRooms(): Promise<RoomState[]> {
   }
 }
 
+export async function getDismissedNotificationIds(): Promise<Set<string>> {
+  const sql = getSql();
+  if (!sql) return memDismissedNotifications;
+  await ensureDb();
+  try {
+    const rows = await sql`SELECT id FROM dismissed_notifications`;
+    for (const r of rows) {
+      if (r && r.id) {
+        memDismissedNotifications.add(String(r.id).toLowerCase().trim());
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching dismissed notifications:', err);
+  }
+  return memDismissedNotifications;
+}
+
+export async function isNotificationDismissed(id: string): Promise<boolean> {
+  const clean = id.toLowerCase().trim();
+  if (memDismissedNotifications.has(clean)) return true;
+  const set = await getDismissedNotificationIds();
+  return set.has(clean);
+}
+
+export async function dismissNotification(id: string): Promise<void> {
+  const clean = id.toLowerCase().trim();
+  memDismissedNotifications.add(clean);
+  memNotifications.delete(clean);
+  const sql = getSql();
+  if (!sql) return;
+  await ensureDb();
+  try {
+    await sql`
+      INSERT INTO dismissed_notifications (id, dismissed_at)
+      VALUES (${clean}, ${Date.now()})
+      ON CONFLICT (id) DO UPDATE SET dismissed_at = EXCLUDED.dismissed_at;
+    `;
+    await sql`DELETE FROM delegate_notifications WHERE LOWER(id) = ${clean}`;
+  } catch (err) {
+    console.error('Error dismissing notification in Neon:', err);
+  }
+}
+
+export async function dismissAllNotifications(ids: string[]): Promise<void> {
+  for (const id of ids) {
+    memDismissedNotifications.add(id.toLowerCase().trim());
+  }
+  memNotifications.clear();
+  const sql = getSql();
+  if (!sql) return;
+  await ensureDb();
+  try {
+    for (const id of ids) {
+      const clean = id.toLowerCase().trim();
+      await sql`
+        INSERT INTO dismissed_notifications (id, dismissed_at)
+        VALUES (${clean}, ${Date.now()})
+        ON CONFLICT (id) DO NOTHING;
+      `;
+    }
+    await sql`DELETE FROM delegate_notifications`;
+  } catch (err) {
+    console.error('Error dismissing all notifications in Neon:', err);
+  }
+}
+
 export async function getAllNotifications(): Promise<ServerNotification[]> {
+  const dismissed = await getDismissedNotificationIds();
+  const isDismissed = (id: string, roomCode?: string) => {
+    const cleanId = id.toLowerCase().trim();
+    if (dismissed.has(cleanId)) return true;
+    if (roomCode) {
+      const cleanCode = roomCode.toLowerCase().trim();
+      if (dismissed.has(cleanCode) || dismissed.has(`notif_room_${cleanCode}`)) return true;
+    }
+    return false;
+  };
+
   const sql = getSql();
   if (!sql) {
-    return Array.from(memNotifications.values()).sort((a, b) => b.createdAt - a.createdAt);
+    return Array.from(memNotifications.values())
+      .filter((n) => !isDismissed(n.id, n.roomCode))
+      .sort((a, b) => b.createdAt - a.createdAt);
   }
   await ensureDb();
   try {
@@ -684,31 +771,49 @@ export async function getAllNotifications(): Promise<ServerNotification[]> {
       SELECT id, title, message, time, type, link, room_code as "roomCode", meeting_url as "meetingUrl", created_at as "createdAt"
       FROM delegate_notifications
       ORDER BY created_at DESC
-      LIMIT 50;
+      LIMIT 60;
     `;
-    return rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      message: r.message,
-      time: r.time || 'Active now',
-      type: (r.type as any) || 'info',
-      link: r.link,
-      roomCode: r.roomCode,
-      meetingUrl: r.meetingUrl,
-      createdAt: Number(r.createdAt || Date.now()),
-    }));
+    return rows
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        message: r.message,
+        time: r.time || 'Active now',
+        type: (r.type as any) || 'info',
+        link: r.link,
+        roomCode: r.roomCode,
+        meetingUrl: r.meetingUrl,
+        createdAt: Number(r.createdAt || Date.now()),
+      }))
+      .filter((n) => !isDismissed(n.id, n.roomCode));
   } catch (err) {
     console.error('Error fetching notifications from Neon:', err);
-    return Array.from(memNotifications.values()).sort((a, b) => b.createdAt - a.createdAt);
+    return Array.from(memNotifications.values())
+      .filter((n) => !isDismissed(n.id, n.roomCode))
+      .sort((a, b) => b.createdAt - a.createdAt);
   }
 }
 
 export async function saveNotification(notif: ServerNotification): Promise<void> {
+  const cleanId = notif.id.toLowerCase().trim();
+  memDismissedNotifications.delete(cleanId);
+  if (notif.roomCode) {
+    const cleanCode = notif.roomCode.toLowerCase().trim();
+    memDismissedNotifications.delete(cleanCode);
+    memDismissedNotifications.delete(`notif_room_${cleanCode}`);
+  }
+
   memNotifications.set(notif.id, notif);
   const sql = getSql();
   if (!sql) return;
   await ensureDb();
   try {
+    // If deliberate broadcast re-sent, allow it
+    await sql`DELETE FROM dismissed_notifications WHERE LOWER(id) = ${cleanId}`;
+    if (notif.roomCode) {
+      await sql`DELETE FROM dismissed_notifications WHERE LOWER(id) = ${notif.roomCode.toLowerCase().trim()}`;
+    }
+
     await sql`
       INSERT INTO delegate_notifications (id, title, message, time, type, link, room_code, meeting_url, created_at)
       VALUES (${notif.id}, ${notif.title}, ${notif.message}, ${notif.time}, ${notif.type}, ${notif.link || ''}, ${notif.roomCode || ''}, ${notif.meetingUrl || ''}, ${notif.createdAt})
@@ -728,17 +833,14 @@ export async function saveNotification(notif: ServerNotification): Promise<void>
 }
 
 export async function deleteNotificationById(id: string): Promise<boolean> {
-  memNotifications.delete(id);
-  const sql = getSql();
-  if (!sql) return true;
-  await ensureDb();
-  try {
-    await sql`DELETE FROM delegate_notifications WHERE id = ${id}`;
-    return true;
-  } catch (err) {
-    console.error('Error deleting notification from Neon:', err);
-    return false;
+  await dismissNotification(id);
+  const cleanId = id.toLowerCase().trim();
+  if (cleanId.startsWith('notif_room_')) {
+    await dismissNotification(cleanId.replace('notif_room_', ''));
+  } else {
+    await dismissNotification(`notif_room_${cleanId}`);
   }
+  return true;
 }
 
 export function getDatabaseStatus() {

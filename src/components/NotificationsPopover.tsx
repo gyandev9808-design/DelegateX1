@@ -131,6 +131,7 @@ export default function NotificationsPopover({
 
   const handleClearAll = () => {
     clearAllNotifications();
+    fetch('/api/notifications', { method: 'DELETE' }).catch(() => {});
     setNotifications([]);
     onUnreadCountChange?.(0);
   };
