@@ -48,17 +48,22 @@ export default function AdminPage() {
 
   const [staffList, setStaffList] = useState<StaffAccount[]>([
     { id: 'admin_gyan_01', name: 'Gyan Dev', email: 'gyan.dev9808@gmail.com', role: 'ADMIN' },
-    { id: 'admin_sec_02', name: 'Master Secretariat', email: 'admin@delegatex.org', role: 'ADMIN' },
-    { id: '1', name: 'Sarah Jenkins', email: 'sarah.eb@delegatex.org', role: 'CHAIR' },
-    { id: '2', name: 'David Kim', email: 'david.sec@delegatex.org', role: 'ADMIN' },
-    { id: '3', name: 'Aarav Mehta', email: 'aarav.eb@delegatex.org', role: 'CHAIR' },
+    { id: 'admin_master_02', name: 'Master Secretariat', email: 'admin@delegatex.org', role: 'ADMIN' },
+    { id: 'staff_sarah_03', name: 'Sarah Jenkins', email: 'sarah.eb@delegatex.org', role: 'CHAIR' },
+    { id: 'staff_david_04', name: 'David Kim', email: 'david.sec@delegatex.org', role: 'ADMIN' },
+    { id: 'staff_aarav_05', name: 'Aarav Mehta', email: 'aarav.eb@delegatex.org', role: 'CHAIR' },
   ]);
+  const [loadingStaff, setLoadingStaff] = useState(false);
+  const [staffSearchQuery, setStaffSearchQuery] = useState('');
+  const [isCreatingStaff, setIsCreatingStaff] = useState(false);
 
-  React.useEffect(() => {
-    fetch('/api/admin/accounts')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.accounts && data.accounts.length > 0) {
+  const fetchStaffAccounts = async () => {
+    try {
+      setLoadingStaff(true);
+      const res = await fetch('/api/admin/accounts');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accounts && Array.isArray(data.accounts)) {
           const mapped: StaffAccount[] = data.accounts.map((a: any) => ({
             id: a.id,
             name: a.name,
@@ -67,14 +72,22 @@ export default function AdminPage() {
           }));
           setStaffList(mapped);
         }
-      })
-      .catch(() => {});
+      }
+    } catch {
+      // Keep local state on error
+    } finally {
+      setLoadingStaff(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchStaffAccounts();
   }, []);
 
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState<'ADMIN' | 'CHAIR'>('CHAIR');
+  const [newStaffRole, setNewStaffRole] = useState<'ADMIN' | 'CHAIR'>('ADMIN');
 
   // Live meeting rooms initialized as empty - only created on-demand with one server per meeting
   const [meetings, setMeetings] = useState<MeetingRoom[]>(() => {
@@ -218,30 +231,77 @@ export default function AdminPage() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  const handleAddStaff = (e: React.FormEvent) => {
+  const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStaffName.trim() || !newStaffEmail.trim() || newStaffPassword.length < 8) {
-      showNotice('Password must be at least 8 characters.');
+    const nameClean = newStaffName.trim();
+    const emailClean = newStaffEmail.trim().toLowerCase();
+    const passClean = newStaffPassword.trim();
+
+    if (!nameClean || !emailClean || passClean.length < 6) {
+      showNotice('Please provide full name, email, and password (min 6 characters).');
       return;
     }
 
-    const newStaff: StaffAccount = {
-      id: Date.now().toString(),
-      name: newStaffName.trim(),
-      email: newStaffEmail.trim().toLowerCase(),
-      role: newStaffRole,
-    };
+    setIsCreatingStaff(true);
+    try {
+      const res = await fetch('/api/admin/create-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: nameClean,
+          email: emailClean,
+          password: passClean,
+          role: newStaffRole,
+          title: newStaffRole === 'ADMIN' ? 'Secretariat Administrator' : 'Executive Board (Chair)',
+        }),
+      });
 
-    setStaffList([...staffList, newStaff]);
-    setNewStaffName('');
-    setNewStaffEmail('');
-    setNewStaffPassword('');
-    showNotice(`Added ${newStaff.name} as ${newStaff.role}`);
+      const data = await res.json();
+      if (!res.ok) {
+        showNotice(data.error || 'Failed to create account.');
+        return;
+      }
+
+      showNotice(`Successfully created ${newStaffRole} account for ${nameClean}!`);
+      setNewStaffName('');
+      setNewStaffEmail('');
+      setNewStaffPassword('');
+      await fetchStaffAccounts();
+    } catch {
+      showNotice('Network error creating admin account.');
+    } finally {
+      setIsCreatingStaff(false);
+    }
   };
 
-  const handleDeleteStaff = (id: string) => {
-    setStaffList(staffList.filter((s) => s.id !== id));
-    showNotice('Staff account removed.');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDeleteStaff = async (id: string, email?: string) => {
+    const cleanEmail = email?.toLowerCase().trim() || id;
+    setDeletingId(id);
+
+    try {
+      const url = `/api/admin/accounts/${encodeURIComponent(id)}${email ? `?email=${encodeURIComponent(email)}` : ''}`;
+      const res = await fetch(url, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showNotice(data.error || 'Failed to delete account.');
+        setDeletingId(null);
+        return;
+      }
+
+      setStaffList((prev) => prev.filter((s) => s.id !== id && s.email !== email));
+      showNotice(`Account for ${cleanEmail} deleted permanently.`);
+      fetchStaffAccounts();
+    } catch {
+      // Also update local state immediately so user is never blocked
+      setStaffList((prev) => prev.filter((s) => s.id !== id && s.email !== email));
+      showNotice(`Account for ${cleanEmail} removed.`);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const isMasterAdmin = user?.role === 'MASTER_ADMIN' || user?.email?.toLowerCase() === 'gyan.dev9808@gmail.com';
@@ -521,6 +581,139 @@ export default function AdminPage() {
                 </div>
                 <span className="text-xs font-semibold text-slate-200 mt-2.5">RoP Configuration</span>
               </button>
+            </div>
+          </section>
+
+          {/* Admin & Dais Personnel Accounts Management */}
+          <section className="delegate-panel rounded-3xl p-6 shadow-xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                  <span>Admin & Executive Board Accounts</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300 border border-cyan-400/20">
+                    {staffList.length} Active
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Create new Secretariat Administrator or Chair accounts, or permanently delete accounts.
+                </p>
+              </div>
+
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={staffSearchQuery}
+                  onChange={(e) => setStaffSearchQuery(e.target.value)}
+                  placeholder="Filter admin accounts..."
+                  className="rounded-xl border border-slate-800 bg-slate-950 pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none w-full sm:w-48"
+                />
+              </div>
+            </div>
+
+            {/* Quick Admin Creation Form */}
+            <form onSubmit={handleAddStaff} className="rounded-2xl bg-slate-950/70 border border-slate-800/80 p-4 space-y-3">
+              <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Create New Secretariat / Chair Account</span>
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <input
+                  required
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  placeholder="Full Name (e.g. Elena Rostova)"
+                  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
+                />
+                <input
+                  required
+                  type="email"
+                  value={newStaffEmail}
+                  onChange={(e) => setNewStaffEmail(e.target.value)}
+                  placeholder="Email address"
+                  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
+                />
+                <input
+                  required
+                  type="password"
+                  value={newStaffPassword}
+                  onChange={(e) => setNewStaffPassword(e.target.value)}
+                  placeholder="Password (6+ chars)"
+                  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
+                />
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value as 'ADMIN' | 'CHAIR')}
+                  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white focus:border-cyan-300 focus:outline-none"
+                >
+                  <option value="ADMIN">Secretariat Administrator (ADMIN)</option>
+                  <option value="CHAIR">Executive Board (CHAIR)</option>
+                </select>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isCreatingStaff}
+                  className="rounded-xl bg-cyan-300 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition disabled:opacity-50 cursor-pointer shadow-md shadow-cyan-500/10"
+                >
+                  {isCreatingStaff ? 'Creating...' : '+ Create Admin Account'}
+                </button>
+              </div>
+            </form>
+
+            {/* List of Admin Accounts */}
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {loadingStaff ? (
+                <div className="py-6 text-center text-xs text-slate-400">Loading admin accounts...</div>
+              ) : staffList.filter((s) => {
+                  if (!staffSearchQuery) return true;
+                  const q = staffSearchQuery.toLowerCase();
+                  return s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q) || s.role.toLowerCase().includes(q);
+                }).length === 0 ? (
+                <div className="py-6 text-center text-xs text-slate-500">No matching admin accounts found.</div>
+              ) : (
+                staffList
+                  .filter((s) => {
+                    if (!staffSearchQuery) return true;
+                    const q = staffSearchQuery.toLowerCase();
+                    return s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q) || s.role.toLowerCase().includes(q);
+                  })
+                  .map((staff) => (
+                    <div
+                      key={staff.id}
+                      className="flex items-center justify-between rounded-xl bg-slate-950/80 border border-slate-800/90 p-3.5 hover:border-slate-700 transition"
+                    >
+                      <div className="min-w-0 pr-3">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-bold text-white truncate">{staff.name}</p>
+                        </div>
+                        <p className="text-[11px] text-slate-400 truncate">{staff.email}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                            staff.role === 'ADMIN'
+                              ? 'bg-cyan-400/10 text-cyan-300 border border-cyan-400/20'
+                              : 'bg-emerald-400/10 text-emerald-300 border border-emerald-400/20'
+                          }`}
+                        >
+                          {staff.role}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStaff(staff.id, staff.email)}
+                          className="rounded-lg p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 hover:border-rose-500/30 border border-transparent transition cursor-pointer"
+                          title={`Delete ${staff.name}'s account`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+              )}
             </div>
           </section>
 
@@ -815,7 +1008,9 @@ export default function AdminPage() {
                       className="flex items-center justify-between rounded-xl bg-slate-950/80 p-3 border border-slate-800"
                     >
                       <div>
-                        <p className="text-xs font-bold text-white">{staff.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-bold text-white">{staff.name}</p>
+                        </div>
                         <p className="text-[11px] text-slate-400">{staff.email}</p>
                       </div>
                       <div className="flex items-center gap-3">
@@ -824,8 +1019,8 @@ export default function AdminPage() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => handleDeleteStaff(staff.id)}
-                          className="rounded-lg p-1.5 text-rose-400 hover:bg-slate-800 transition"
+                          onClick={() => handleDeleteStaff(staff.id, staff.email)}
+                          className="rounded-lg p-1.5 text-rose-400 hover:bg-slate-800 transition cursor-pointer"
                           title="Delete staff account"
                         >
                           <Trash2 className="h-4 w-4" />

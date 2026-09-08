@@ -11,6 +11,7 @@ import {
   getUserByEmail,
   saveUser,
   deleteUserByEmail,
+  deleteUserByIdOrEmail,
   getAllUsers,
   savePasswordReset,
   getPasswordReset,
@@ -842,37 +843,51 @@ apiRouter.post('/auth/logout', (req, res) => {
   return res.json({ message: 'Logged out successfully' });
 });
 
-// GET /api/admin/accounts
+// GET /api/admin/accounts - Get all admin & staff accounts
 apiRouter.get('/admin/accounts', async (req, res) => {
-  const allUsers = await getAllUsers();
-  res.json({ accounts: allUsers });
+  try {
+    const allUsers = await getAllUsers();
+    // Prioritize staff/admin roles (ADMIN, MASTER_ADMIN, CHAIR)
+    const staff = allUsers.filter(
+      (u) => u.role === 'ADMIN' || u.role === 'MASTER_ADMIN' || u.role === 'CHAIR'
+    );
+    res.json({ accounts: staff.length > 0 ? staff : allUsers });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve admin accounts' });
+  }
 });
 
-// POST /api/admin/create-account
+// POST /api/admin/create-account - Admin creates another admin or chair account
 apiRouter.post('/admin/create-account', async (req, res) => {
   try {
     const { name, email, role, title, password } = req.body;
     if (!name || name.trim().length < 2) {
-      return res.status(400).json({ error: 'Full name is required.' });
+      return res.status(400).json({ error: 'Full name is required (minimum 2 characters).' });
     }
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       return res.status(400).json({ error: 'A valid email address is required.' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const plainPassword = password || 'Secretariat2026!';
+    const existing = await getUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(409).json({ error: `An account for ${cleanEmail} already exists.` });
+    }
+
+    const plainPassword = password && String(password).trim().length >= 6 ? String(password).trim() : 'Secretariat2026!';
     const passwordHash = bcrypt.hashSync(plainPassword, 10);
+    const validRole = role === 'CHAIR' ? 'CHAIR' : role === 'MASTER_ADMIN' ? 'MASTER_ADMIN' : 'ADMIN';
 
     const newAdmin: StoredUser = {
       id: 'admin_' + Date.now(),
       name: name.trim(),
       email: cleanEmail,
-      role: role || 'ADMIN',
-      title: title || 'Secretariat Administrator',
+      role: validRole,
+      title: title || (validRole === 'CHAIR' ? 'Executive Board (Chair)' : 'Secretariat Administrator'),
       passwordHash,
       country: 'Secretariat Dais',
       committee: 'Executive Board',
-      avatarColor: role === 'MASTER_ADMIN' ? 'from-cyan-500 to-blue-600' : 'from-amber-500 to-orange-600',
+      avatarColor: validRole === 'MASTER_ADMIN' ? 'from-cyan-500 to-blue-600' : 'from-amber-500 to-orange-600',
       createdAt: Date.now(),
     };
 
@@ -880,7 +895,7 @@ apiRouter.post('/admin/create-account', async (req, res) => {
     const token = generateJwtToken(newAdmin);
 
     return res.status(201).json({
-      message: 'Admin account created successfully.',
+      message: `${validRole === 'CHAIR' ? 'Chair' : 'Admin'} account created successfully.`,
       token,
       account: {
         id: newAdmin.id,
@@ -888,10 +903,47 @@ apiRouter.post('/admin/create-account', async (req, res) => {
         email: newAdmin.email,
         role: newAdmin.role,
         title: newAdmin.title,
+        createdAt: newAdmin.createdAt,
       },
     });
-  } catch {
-    return res.status(500).json({ error: 'Failed to create admin account.' });
+  } catch (err: any) {
+    console.error('Failed to create admin account:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to create admin account.' });
+  }
+});
+
+// DELETE /api/admin/accounts/:id - Admin deletes another admin or staff account
+apiRouter.delete('/admin/accounts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const emailQuery = (req.query.email as string) || '';
+    if (!id && !emailQuery) {
+      return res.status(400).json({ error: 'Account identifier is required.' });
+    }
+
+    const cleanId = decodeURIComponent(id || '').toLowerCase().trim();
+    const cleanEmail = decodeURIComponent(emailQuery).toLowerCase().trim();
+    await deleteUserByIdOrEmail(cleanId, cleanEmail);
+
+    return res.json({ success: true, message: 'Admin account deleted permanently.' });
+  } catch (err: any) {
+    console.error('Failed to delete admin account:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to delete admin account.' });
+  }
+});
+
+// POST /api/admin/delete-account - Alternate endpoint to delete an admin account
+apiRouter.post('/admin/delete-account', async (req, res) => {
+  try {
+    const id = req.body.id ? String(req.body.id).toLowerCase().trim() : '';
+    const email = req.body.email ? String(req.body.email).toLowerCase().trim() : '';
+    if (!id && !email) {
+      return res.status(400).json({ error: 'Account identifier is required.' });
+    }
+    await deleteUserByIdOrEmail(id, email);
+    return res.json({ success: true, message: 'Admin account deleted permanently.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to delete admin account.' });
   }
 });
 

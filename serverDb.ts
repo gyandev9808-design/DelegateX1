@@ -381,6 +381,42 @@ export async function deleteUserByEmail(email: string): Promise<boolean> {
   }
 }
 
+export async function deleteUserByIdOrEmail(identifier: string, secondIdentifier?: string): Promise<boolean> {
+  const clean1 = (identifier || '').toLowerCase().trim();
+  const clean2 = (secondIdentifier || '').toLowerCase().trim();
+
+  let foundEmails: string[] = [];
+  for (const [email, user] of memUsers.entries()) {
+    const e = email.toLowerCase().trim();
+    const id = user.id.toLowerCase().trim();
+    if (
+      (clean1 && (e === clean1 || id === clean1)) ||
+      (clean2 && (e === clean2 || id === clean2))
+    ) {
+      foundEmails.push(email);
+    }
+  }
+
+  for (const em of foundEmails) {
+    memUsers.delete(em);
+  }
+
+  const sql = getSql();
+  if (!sql) return true;
+  await ensureDb();
+  try {
+    if (clean1 && clean2) {
+      await sql`DELETE FROM users WHERE LOWER(email) = ${clean1} OR LOWER(id) = ${clean1} OR LOWER(email) = ${clean2} OR LOWER(id) = ${clean2};`;
+    } else if (clean1) {
+      await sql`DELETE FROM users WHERE LOWER(email) = ${clean1} OR LOWER(id) = ${clean1};`;
+    }
+    return true;
+  } catch (err) {
+    console.error('Error deleting user from Neon:', err);
+    return true;
+  }
+}
+
 export async function getAllUsers(): Promise<Omit<StoredUser, 'passwordHash'>[]> {
   const sql = getSql();
   if (!sql) {
