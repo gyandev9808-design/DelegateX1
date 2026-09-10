@@ -53,6 +53,7 @@ interface Participant {
   isVideoOn?: boolean;
   isAudioMuted?: boolean;
   isVideoMuted?: boolean;
+  isScreenSharing?: boolean;
   isHandRaised: boolean;
   isSpeaking?: boolean;
   videoFrame?: string;
@@ -137,7 +138,28 @@ export default function MeetRoomPage() {
   const [localCountry, setLocalCountry] = useState<string>(
     () => localStorage.getItem('mun_user_country') || ''
   );
-  const [localRole, setLocalRole] = useState<'CHAIR' | 'DELEGATE'>('DELEGATE');
+
+  // Authenticated Admin check
+  const currentUserRole = localStorage.getItem('mun_user_role') || 'DELEGATE';
+  const currentUserEmail = (localStorage.getItem('mun_user_email') || '').toLowerCase();
+  const isAdminUser =
+    currentUserRole === 'ADMIN' ||
+    currentUserRole === 'MASTER_ADMIN' ||
+    currentUserEmail === 'gyan.dev9808@gmail.com' ||
+    currentUserEmail === 'admin@delegatex.org' ||
+    currentUserEmail.includes('admin') ||
+    currentUserEmail.includes('sec');
+
+  // Strict Model UN mandate:
+  // Delegates cannot choose their role. If their role is delegate, it is automatically DELEGATE.
+  // ONLY Secretariat Administrators can choose their role.
+  const [localRole, setLocalRole] = useState<'CHAIR' | 'DELEGATE'>(() => {
+    return isAdminUser ? 'CHAIR' : 'DELEGATE';
+  });
+
+  const effectiveRole: 'CHAIR' | 'DELEGATE' = isAdminUser ? localRole : 'DELEGATE';
+  const isChairOrAdmin = isAdminUser && effectiveRole === 'CHAIR';
+
   const [lobbyAudioLevel, setLobbyAudioLevel] = useState<number>(0);
 
   // --- LOCAL USER MEDIA STATE ---
@@ -202,19 +224,8 @@ export default function MeetRoomPage() {
   const [hostId, setHostId] = useState<string>('');
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [chatDisabled, setChatDisabled] = useState<boolean>(false);
-  const [screenShareDisabled, setScreenShareDisabled] = useState<boolean>(true);
+  const [screenShareDisabled, setScreenShareDisabled] = useState<boolean>(false);
   const [showScreenShareRestrictedModal, setShowScreenShareRestrictedModal] = useState<boolean>(false);
-
-  const currentUserRole = localStorage.getItem('mun_user_role') || 'DELEGATE';
-  const currentUserEmail = (localStorage.getItem('mun_user_email') || '').toLowerCase();
-  const isChairOrAdmin =
-    localRole === 'CHAIR' ||
-    currentUserRole === 'ADMIN' ||
-    currentUserRole === 'MASTER_ADMIN' ||
-    currentUserRole === 'CHAIR' ||
-    currentUserEmail === 'gyan.dev9808@gmail.com' ||
-    currentUserEmail.includes('admin') ||
-    currentUserEmail.includes('sec');
 
   // Participants & Chat
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -447,6 +458,34 @@ export default function MeetRoomPage() {
     updateParticipantState({ isHandRaised: next });
   };
 
+  const stopScreenShare = () => {
+    if (screenStreamRef.current) {
+      try {
+        screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      } catch {}
+      screenStreamRef.current = null;
+    }
+    setIsScreenSharing(false);
+    updateParticipantState({ isScreenSharing: false });
+
+    // Restore camera to local video element
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play().catch(() => {});
+    }
+
+    // Replace tracks in WebRTC peer connections back to camera
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      peerConnectionsRef.current.forEach((pc) => {
+        const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+        if (sender && videoTrack) {
+          sender.replaceTrack(videoTrack).catch(() => {});
+        }
+      });
+    }
+  };
+
   const toggleScreenShare = async () => {
     if (!isChairOrAdmin && screenShareDisabled && !isScreenSharing) {
       setShowScreenShareRestrictedModal(true);
@@ -454,51 +493,59 @@ export default function MeetRoomPage() {
     }
 
     if (isScreenSharing) {
-      // Stop screen share
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach((t) => t.stop());
-        screenStreamRef.current = null;
-      }
-      setIsScreenSharing(false);
-      if (localVideoRef.current && localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
-      // Replace tracks in peer connections back to camera
-      if (localStreamRef.current) {
-        const videoTrack = localStreamRef.current.getVideoTracks()[0];
-        peerConnectionsRef.current.forEach((pc) => {
-          const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-          if (sender && videoTrack) {
-            sender.replaceTrack(videoTrack);
-          }
-        });
-      }
-    } else {
+      stopScreenShare();
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      alert('Screen sharing is not supported in this browser window or iframe. Please open in a new tab if required.');
+      return;
+    }
+
+    try {
+      let screenStream: MediaStream;
       try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: true,
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: 'always',
+          } as any,
+          audio: false,
         });
-        screenStreamRef.current = screenStream;
-        setIsScreenSharing(true);
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = screenStream;
+      } catch (displayErr: any) {
+        if (displayErr?.name === 'NotAllowedError') {
+          return;
         }
+        // Fallback for browsers with strict constraint schemas
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+        });
+      }
 
-        const screenTrack = screenStream.getVideoTracks()[0];
+      screenStreamRef.current = screenStream;
+      setIsScreenSharing(true);
+      updateParticipantState({ isScreenSharing: true });
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = screenStream;
+        localVideoRef.current.play().catch(() => {});
+      }
+
+      const screenTrack = screenStream.getVideoTracks()[0];
+      if (screenTrack) {
         screenTrack.onended = () => {
-          toggleScreenShare();
+          stopScreenShare();
         };
 
         // Replace tracks in WebRTC peer connections with screen track
         peerConnectionsRef.current.forEach((pc) => {
           const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-          if (sender && screenTrack) {
-            sender.replaceTrack(screenTrack);
+          if (sender) {
+            sender.replaceTrack(screenTrack).catch(() => {});
           }
         });
-      } catch (err) {
+      }
+    } catch (err: any) {
+      if (err?.name !== 'NotAllowedError') {
         console.warn('Screen share canceled or not supported:', err);
       }
     }
@@ -601,7 +648,8 @@ export default function MeetRoomPage() {
           id: localUserId,
           name: effectiveName,
           country: effectiveCountry,
-          role: localRole,
+          role: effectiveRole,
+          email: currentUserEmail,
           isMuted: !isMicOn,
           isVideoOn: isVideoOn,
         }),
@@ -638,7 +686,7 @@ export default function MeetRoomPage() {
       frameBroadcastIntervalRef.current = null;
     }
 
-    if (!isVideoOn) {
+    if (!isVideoOn && !isScreenSharing) {
       sendVideoFrame('');
       return;
     }
@@ -649,7 +697,7 @@ export default function MeetRoomPage() {
     const ctx = canvas.getContext('2d');
 
     frameBroadcastIntervalRef.current = setInterval(() => {
-      if (!isVideoOn) return;
+      if (!isVideoOn && !isScreenSharing) return;
       const videoEl = localVideoRef.current;
       if (videoEl && videoEl.videoWidth > 0 && !videoEl.paused && ctx) {
         try {
@@ -666,7 +714,7 @@ export default function MeetRoomPage() {
         frameBroadcastIntervalRef.current = null;
       }
     };
-  }, [isInLobby, isVideoOn, cleanRoomId, localUserId]);
+  }, [isInLobby, isVideoOn, isScreenSharing, cleanRoomId, localUserId]);
 
   const handleLeaveCall = async () => {
     try {
@@ -849,7 +897,8 @@ export default function MeetRoomPage() {
                 id: localUserId,
                 name: localUserName.trim() || 'Diplomatic Delegate',
                 country: localCountry.trim() || 'Observer / Delegate',
-                role: localRole,
+                role: effectiveRole,
+                email: currentUserEmail,
                 isMuted: !isMicOn,
                 isVideoOn: isVideoOn,
               }),
@@ -960,7 +1009,7 @@ export default function MeetRoomPage() {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
-    if (chatDisabled && localRole !== 'CHAIR') {
+    if (chatDisabled && !isChairOrAdmin) {
       alert('Floor chat has been paused by the Dais.');
       return;
     }
@@ -972,7 +1021,7 @@ export default function MeetRoomPage() {
       id: 'msg_local_' + Date.now(),
       senderId: localUserId,
       senderName: localUserName,
-      senderRole: localRole,
+      senderRole: effectiveRole,
       senderCountry: localCountry,
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -1215,15 +1264,50 @@ export default function MeetRoomPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-300">Role</label>
-                  <select
-                    value={localRole}
-                    onChange={(e) => setLocalRole(e.target.value as any)}
-                    className="w-full rounded-2xl border border-white/15 bg-slate-950 px-3.5 py-2.5 text-xs text-white focus:border-cyan-300 focus:outline-none"
-                  >
-                    <option value="DELEGATE">Delegate</option>
-                    <option value="CHAIR">President / Chair (Dais)</option>
-                  </select>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-300">Role</label>
+                    {isAdminUser ? (
+                      <span className="text-[10px] text-amber-300 font-semibold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                        Admin Privileges
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-cyan-300 font-semibold bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
+                        Automatic
+                      </span>
+                    )}
+                  </div>
+
+                  {isAdminUser ? (
+                    <div>
+                      <select
+                        value={localRole}
+                        onChange={(e) => setLocalRole(e.target.value as any)}
+                        className="w-full rounded-2xl border border-amber-500/30 bg-slate-950 px-3.5 py-2.5 text-xs text-white focus:border-amber-400 focus:outline-none"
+                      >
+                        <option value="CHAIR">Admin / Executive Dais (Chair)</option>
+                        <option value="DELEGATE">Delegate (Floor Observer)</option>
+                      </select>
+                      <p className="text-[10px] text-amber-400/80 mt-1 flex items-center gap-1">
+                        <Shield className="w-3 h-3 shrink-0" />
+                        Admin verified: You may select Dais or Floor role
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="w-full rounded-2xl border border-white/10 bg-slate-950/80 px-3.5 py-2.5 text-xs text-slate-300 flex items-center justify-between">
+                        <span className="font-semibold text-white flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block"></span>
+                          Delegate
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          Assigned Automatically
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Delegates cannot choose their role. Only Secretariat Admins can choose their role.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1236,13 +1320,15 @@ export default function MeetRoomPage() {
                 </button>
 
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!isChairOrAdmin && screenShareDisabled) {
                       setShowScreenShareRestrictedModal(true);
                       return;
                     }
-                    setIsScreenSharing(true);
-                    handleJoinMeeting();
+                    await handleJoinMeeting();
+                    setTimeout(() => {
+                      toggleScreenShare();
+                    }, 400);
                   }}
                   className="w-full rounded-2xl border border-white/15 bg-white/5 py-3 text-xs font-semibold text-white hover:bg-white/10 transition flex items-center justify-center gap-2"
                 >
@@ -1344,21 +1430,34 @@ export default function MeetRoomPage() {
             <video
               ref={(el) => {
                 localVideoRef.current = el;
-                if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
-                  el.srcObject = isScreenSharing && screenStreamRef.current ? screenStreamRef.current : localStreamRef.current;
-                  el.play().catch(() => {});
+                if (el) {
+                  const targetStream = isScreenSharing && screenStreamRef.current
+                    ? screenStreamRef.current
+                    : localStreamRef.current;
+                  if (targetStream && el.srcObject !== targetStream) {
+                    el.srcObject = targetStream;
+                    el.play().catch(() => {});
+                  }
                 }
               }}
               autoPlay
               playsInline
               muted
-              className={`w-full h-full object-cover ${
-                isScreenSharing ? '' : '-scale-x-100'
-              } ${!isVideoOn ? 'hidden' : getVirtualBackgroundClass()}`}
+              className={`w-full h-full ${
+                isScreenSharing ? 'object-contain bg-slate-950' : 'object-cover -scale-x-100'
+              } ${!isVideoOn && !isScreenSharing ? 'hidden' : getVirtualBackgroundClass()}`}
             />
 
-            {/* Placeholder Avatar when Video is Off */}
-            {!isVideoOn && (
+            {/* Screen sharing badge on local tile */}
+            {isScreenSharing && (
+              <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-cyan-500/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-cyan-300/40 text-[10px] font-bold text-slate-950 shadow-lg pointer-events-none">
+                <MonitorUp className="h-3 w-3 animate-pulse" />
+                <span>You are sharing your screen</span>
+              </div>
+            )}
+
+            {/* Placeholder Avatar when Video is Off and NOT screen sharing */}
+            {!isVideoOn && !isScreenSharing && (
               <div className="flex flex-col items-center gap-2">
                 <div className="h-20 w-20 rounded-full bg-cyan-500/20 border-2 border-cyan-400/40 flex items-center justify-center text-2xl font-extrabold text-cyan-300 shadow-xl">
                   {localUserName.charAt(0).toUpperCase()}
@@ -1409,7 +1508,7 @@ export default function MeetRoomPage() {
           {/* REMOTE PARTICIPANTS TILES */}
           {participants.map((p) => {
             const remoteStream = remoteStreamsRef.current.get(p.id);
-            const isParticipantVideoActive = p.isVideoOn !== undefined ? p.isVideoOn : !p.isVideoMuted;
+            const isParticipantVideoActive = p.isScreenSharing || (p.isVideoOn !== undefined ? p.isVideoOn : !p.isVideoMuted);
             const hasLiveWebRtcVideo = !!(
               remoteStream &&
               remoteStream.getVideoTracks().length > 0 &&
@@ -1455,18 +1554,18 @@ export default function MeetRoomPage() {
                     onLoadedMetadata={(e) => {
                       (e.currentTarget as HTMLVideoElement).play().catch(() => {});
                     }}
-                    className="w-full h-full object-cover"
+                    className={`w-full h-full ${p.isScreenSharing ? 'object-contain bg-slate-950' : 'object-cover'}`}
                   />
                 ) : isParticipantVideoActive && hasLiveFrame ? (
                   <div className="relative w-full h-full">
                     <img
                       src={p.videoFrame}
                       alt={p.name}
-                      className="w-full h-full object-cover"
+                      className={`w-full h-full ${p.isScreenSharing ? 'object-contain bg-slate-950' : 'object-cover'}`}
                     />
                     <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-slate-950/70 backdrop-blur-sm px-2 py-0.5 rounded-md border border-white/10 text-[10px] text-emerald-400">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Live Camera
+                      {p.isScreenSharing ? 'Live Screen Share' : 'Live Camera'}
                     </div>
                   </div>
                 ) : (
@@ -1479,7 +1578,7 @@ export default function MeetRoomPage() {
                       {p.name.charAt(0).toUpperCase()}
                     </div>
                     <p className="text-[11px] font-semibold text-slate-400">
-                      {p.country || 'Delegate'} {isParticipantVideoActive ? '(Connecting camera...)' : '(Camera Off)'}
+                      {p.country || 'Delegate'} {isParticipantVideoActive ? '(Connecting stream...)' : '(Camera Off)'}
                     </p>
                   </div>
                 )}

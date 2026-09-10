@@ -21,6 +21,9 @@ import {
   LayoutDashboard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import CommitteesManager from '../components/admin/CommitteesManager';
+import RollCallManager from '../components/admin/RollCallManager';
+import { DelegatesManager } from '../components/admin/DelegatesManager';
 
 const adminAreaTitles: Record<string, { title: string; desc: string; icon: any }> = {
   search: {
@@ -44,13 +47,13 @@ const adminAreaTitles: Record<string, { title: string; desc: string; icon: any }
     icon: Calendar,
   },
   delegates: {
-    title: 'Registered Delegate Directory (120)',
-    desc: 'Manage credentials, country allocations, committee assignments, and attendance logs.',
+    title: 'Delegate Directory & Portfolio Allocations',
+    desc: 'Assign delegates to committees and country delegations. Synchronize diplomatic credentials in real-time with delegate dashboards.',
     icon: Users,
   },
   committees: {
-    title: 'Active Committees & Agendas (6)',
-    desc: 'UNSC, UNHRC, DISEC, UNEP, Crisis Simulation, and General Assembly Plenary settings.',
+    title: 'Active Committees & Agendas',
+    desc: 'Create and manage councils, agendas, executive boards, and committee rosters for chairs and admins.',
     icon: Settings,
   },
   broadcasts: {
@@ -170,7 +173,7 @@ export default function AdminAreaPage() {
     <div className="delegate-page min-h-screen text-slate-100 pt-24 pb-16 flex flex-col selection:bg-cyan-500/20 selection:text-cyan-200">
       <Navbar />
 
-      <main className="max-w-4xl mx-auto px-5 py-6 flex-1 w-full space-y-6">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full space-y-6">
         {/* Navigation Bar / Breadcrumbs */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
           <div className="flex items-center gap-3">
@@ -236,8 +239,16 @@ export default function AdminAreaPage() {
             </div>
           </div>
 
-          {/* If area === 'rop-config', show interactive RoP Configuration Engine */}
-          {area === 'rop-config' ? (
+          {/* Dynamic Module Rendering */}
+          {area === 'delegates' ? (
+            <DelegatesManager />
+          ) : area === 'committees' ? (
+            <CommitteesManager
+              onSelectCommitteeForRollCall={(cmteId) => navigate(`/admin/roll-call?committee=${cmteId}`)}
+            />
+          ) : area === 'roll-call' ? (
+            <RollCallManager />
+          ) : area === 'rop-config' ? (
             <div className="space-y-6 pt-2">
               {/* RoP Framework Selection */}
               <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-5 space-y-3">
@@ -416,12 +427,28 @@ export default function AdminAreaPage() {
           {/* Action buttons */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/10">
             <div className="flex flex-wrap gap-3">
-              <button
-                onClick={() => triggerAction(area === 'rop-config' ? 'Rules of Procedure' : 'Module settings')}
-                className="rounded-xl bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"
-              >
-                Save & Synchronize RoP
-              </button>
+              {area === 'committees' ? (
+                <Link
+                  to="/admin/roll-call"
+                  className="rounded-xl bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"
+                >
+                  Open Roll Call Manager →
+                </Link>
+              ) : area === 'roll-call' ? (
+                <Link
+                  to="/admin/committees"
+                  className="rounded-xl bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"
+                >
+                  Manage Committees Directory →
+                </Link>
+              ) : (
+                <button
+                  onClick={() => triggerAction(area === 'rop-config' ? 'Rules of Procedure' : 'Module settings')}
+                  className="rounded-xl bg-cyan-300 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"
+                >
+                  Save & Synchronize {area === 'rop-config' ? 'RoP' : 'Settings'}
+                </button>
+              )}
               <Link
                 to="/committee"
                 className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold text-white hover:bg-white/10 transition"

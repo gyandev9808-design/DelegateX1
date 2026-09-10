@@ -27,19 +27,21 @@ import {
   Clock,
   Inbox,
   RotateCcw,
+  GraduationCap,
 } from 'lucide-react';
+import { validateRealEmail } from '../utils/emailValidator';
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, isAuthenticated, login, register, oauthGoogle, forgotPassword, sendEmailCode, resetPassword, logout } = useAuth();
+  const { user, isAuthenticated, login, register, verifyRegistrationCode, resendRegistrationCode, oauthGoogle, forgotPassword, sendEmailCode, resetPassword, logout } = useAuth();
 
   // Determine initial mode
   const modeParam = searchParams.get('mode')?.toUpperCase();
   const tokenParam = searchParams.get('token');
   const emailParam = searchParams.get('email');
 
-  const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'FORGOT' | 'RESET'>(() => {
+  const [mode, setMode] = useState<'LOGIN' | 'REGISTER' | 'VERIFY_REGISTRATION' | 'FORGOT' | 'RESET'>(() => {
     if (modeParam === 'RESET' || tokenParam) return 'RESET';
     if (modeParam === 'FORGOT') return 'FORGOT';
     if (modeParam === 'REGISTER') return 'REGISTER';
@@ -49,12 +51,19 @@ export default function AuthPage() {
   // Form State
   const [name, setName] = useState('');
   const [email, setEmail] = useState(emailParam || '');
+  const [gradeClass, setGradeClass] = useState('Class 10');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [regAccountType, setRegAccountType] = useState<'DELEGATE' | 'ADMIN'>('DELEGATE');
-  const [secretariatPasskey, setSecretariatPasskey] = useState('');
-  const [country, setCountry] = useState('United States');
-  const [committee, setCommittee] = useState('UN Security Council (UNSC)');
+  const [country, setCountry] = useState('');
+  const [committee, setCommittee] = useState('');
+
+  // Registration Email Verification State
+  const [pendingRegEmail, setPendingRegEmail] = useState('');
+  const [pendingRegToken, setPendingRegToken] = useState('');
+  const [regCodeInput, setRegCodeInput] = useState('');
+  const [isVerifyingRegCode, setIsVerifyingRegCode] = useState(false);
+  const [isResendingRegCode, setIsResendingRegCode] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Cloudflare Captcha States (Strictly unverified by default - no account access without captcha)
   const [loginCaptchaVerified, setLoginCaptchaVerified] = useState(false);
@@ -99,6 +108,14 @@ export default function AuthPage() {
     }
   }, [tokenParam, emailParam]);
 
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
+
   // Password strength calculation
   const calculatePasswordStrength = (pass: string) => {
     if (!pass) return { score: 0, label: 'None', color: 'bg-slate-700' };
@@ -122,6 +139,15 @@ export default function AuthPage() {
     e.preventDefault();
     setFeedback(null);
 
+    const emailCheck = validateRealEmail(email);
+    if (!emailCheck.isValid) {
+      setFeedback({
+        text: emailCheck.error || 'Please enter a genuine, active email address.',
+        type: 'error',
+      });
+      return;
+    }
+
     if (!loginCaptchaVerified) {
       setFeedback({
         text: 'Please complete the Cloudflare security verification before signing in.',
@@ -131,7 +157,7 @@ export default function AuthPage() {
     }
 
     setLoading(true);
-    const res = await login(email, password);
+    const res = await login(emailCheck.cleanEmail, password);
     setLoading(false);
 
     if (res.success && res.user) {
@@ -155,10 +181,19 @@ export default function AuthPage() {
     }
   };
 
-  // Handle Register Submit (Delegates or Secretariat Admin)
+  // Handle Register Submit (Delegates only)
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
+
+    const emailCheck = validateRealEmail(email);
+    if (!emailCheck.isValid) {
+      setFeedback({
+        text: emailCheck.error || 'Please enter a genuine, active email address.',
+        type: 'error',
+      });
+      return;
+    }
 
     if (!regCaptchaVerified) {
       setFeedback({
@@ -183,39 +218,36 @@ export default function AuthPage() {
       return;
     }
 
-    if (regAccountType === 'ADMIN' && !secretariatPasskey.trim()) {
-      setFeedback({
-        text: 'Secretariat Passkey is required to create an Admin account. (e.g. AdminSecretariat2026!)',
-        type: 'error',
-      });
-      return;
-    }
-
     setLoading(true);
     const res = await register({
       name,
-      email,
+      email: emailCheck.cleanEmail,
       password,
-      role: regAccountType === 'ADMIN' ? 'ADMIN' : 'DELEGATE',
-      title: regAccountType === 'ADMIN' ? 'Secretariat Administrator' : 'Distinguished Delegate',
-      secretariatPasskey: regAccountType === 'ADMIN' ? secretariatPasskey.trim() : undefined,
+      gradeClass: gradeClass.trim() || undefined,
+      role: 'DELEGATE',
+      title: 'Delegate',
+      country,
+      committee,
     });
     setLoading(false);
 
-    if (res.success && res.user) {
-      const isAdminRole = res.user.role === 'ADMIN' || res.user.role === 'MASTER_ADMIN' || res.user.role === 'CHAIR';
+    if (res.requiresVerification) {
+      setPendingRegEmail(res.email || emailCheck.cleanEmail);
+      setPendingRegToken(res.token || '');
+      setRegCodeInput('');
+      setResendCooldown(30);
+      setMode('VERIFY_REGISTRATION');
       setFeedback({
-        text: isAdminRole
-          ? `Secretariat Admin Account created successfully for ${res.user.name}! Opening Master Secretariat Panel...`
-          : `Delegate Account created successfully for ${res.user.name}! Opening Delegate Dashboard...`,
+        text: `A 6-digit verification code has been forwarded to your Gmail (${res.email || emailCheck.cleanEmail}). Please check your Gmail inbox and enter the code below to activate your account.`,
+        type: 'success',
+      });
+    } else if (res.success && res.user) {
+      setFeedback({
+        text: `Delegate Account created successfully for ${res.user.name}! Opening Delegate Dashboard...`,
         type: 'success',
       });
       setTimeout(() => {
-        if (isAdminRole) {
-          navigate('/admin');
-        } else {
-          navigate('/dashboard');
-        }
+        navigate('/dashboard');
       }, 700);
     } else {
       setFeedback({ text: res.error || 'Registration failed.', type: 'error' });
@@ -223,10 +255,78 @@ export default function AuthPage() {
     }
   };
 
+  // Handle Verify Registration Code forwarded to Gmail
+  const handleVerifyRegistrationCode = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanCode = regCodeInput.trim().replace(/[\s-]/g, '');
+    if (!cleanCode || cleanCode.length < 6) {
+      setFeedback({
+        text: 'Please enter the complete 6-digit verification code forwarded to your Gmail.',
+        type: 'error',
+      });
+      return;
+    }
+    setIsVerifyingRegCode(true);
+    setFeedback(null);
+    const res = await verifyRegistrationCode({
+      email: pendingRegEmail,
+      code: cleanCode,
+      token: pendingRegToken,
+    });
+    setIsVerifyingRegCode(false);
+
+    if (res.success && res.user) {
+      setFeedback({
+        text: `Email verified successfully! Welcome Diplomat ${res.user.name}. Opening Delegate Dashboard...`,
+        type: 'success',
+      });
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 700);
+    } else {
+      setFeedback({
+        text: res.error || 'Verification code failed. Please check your Gmail and try again.',
+        type: 'error',
+      });
+    }
+  };
+
+  // Handle Resend Registration Code to Gmail
+  const handleResendRegistrationCode = async () => {
+    if (resendCooldown > 0 || isResendingRegCode) return;
+    setIsResendingRegCode(true);
+    setFeedback(null);
+    const res = await resendRegistrationCode({
+      email: pendingRegEmail,
+      token: pendingRegToken,
+    });
+    setIsResendingRegCode(false);
+
+    if (res.success) {
+      setResendCooldown(30);
+      setFeedback({
+        text: `A fresh 6-digit verification code has been forwarded to your Gmail (${pendingRegEmail}).`,
+        type: 'success',
+      });
+    } else {
+      setFeedback({ text: res.error || 'Failed to resend verification code.', type: 'error' });
+    }
+  };
+
   // Handle Request/Regenerate Email Verification Code
   const handleRequestEmailCode = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setFeedback(null);
+
+    const targetEmail = (resetEmail || email).trim();
+    const emailCheck = validateRealEmail(targetEmail);
+    if (!emailCheck.isValid) {
+      setFeedback({
+        text: emailCheck.error || 'Please enter a genuine email address to receive the verification code.',
+        type: 'error',
+      });
+      return;
+    }
 
     if (!forgotCaptchaVerified) {
       setFeedback({
@@ -236,31 +336,36 @@ export default function AuthPage() {
       return;
     }
 
-    const targetEmail = (resetEmail || email).trim();
-    if (!targetEmail || !/^\S+@\S+\.\S+$/.test(targetEmail)) {
-      setFeedback({ text: 'Please enter a valid email address to receive the verification code.', type: 'error' });
-      return;
-    }
-
     setIsRegeneratingCode(true);
-    const res = await forgotPassword(targetEmail);
+    const res = await forgotPassword(emailCheck.cleanEmail);
     setIsRegeneratingCode(false);
 
     if (res.success) {
-      const timeStamp = res.generatedAt || new Date().toLocaleTimeString();
+      const timeStamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      const isEmailSent = Boolean(res.emailSent);
 
       setEmailCodeInfo({
-        token: '',
-        code: '',
+        token: res.token || '',
+        code: isEmailSent ? '' : (res.code || ''),
         email: targetEmail,
         recipient: targetEmail,
         link: '',
         generatedAt: timeStamp,
       });
-      setFeedback({
-        text: `A fresh 6-digit verification code has been dispatched directly to ${targetEmail}. Please check your email inbox (and spam folder).`,
-        type: 'info',
-      });
+
+      if (!isEmailSent && res.code) {
+        setResetTokenInput(res.code);
+        setFeedback({
+          text: `Google SMTP blocked dispatch (Error 534: InvalidSecondFactor). Temporary code: ${res.code} (auto-filled). Please re-generate your Google App Password.`,
+          type: 'info',
+        });
+      } else {
+        setResetTokenInput('');
+        setFeedback({
+          text: `A 6-digit verification code has been dispatched to ${targetEmail}. Please check your email inbox and spam folder.`,
+          type: 'success',
+        });
+      }
     } else {
       setFeedback({ text: res.error || 'Failed to dispatch email verification code.', type: 'error' });
       setForgotCaptchaVerified(false);
@@ -431,12 +536,14 @@ export default function AuthPage() {
             <h1 className="text-2xl font-extrabold text-white tracking-tight">
               {mode === 'LOGIN' && 'Sign In to DelegateX'}
               {mode === 'REGISTER' && 'Register Delegate Account'}
+              {mode === 'VERIFY_REGISTRATION' && 'Verify Your Email Address'}
               {mode === 'FORGOT' && 'Email Verification & Reset'}
               {mode === 'RESET' && 'Set New Account Password'}
             </h1>
             <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
               {mode === 'LOGIN' && 'Sign in using your email, password, and Cloudflare security verification.'}
               {mode === 'REGISTER' && 'Create your diplomat delegate portfolio to participate in Model UN conferences.'}
+              {mode === 'VERIFY_REGISTRATION' && `Enter the 6-digit verification code forwarded to ${pendingRegEmail} to activate your account.`}
               {mode === 'FORGOT' && 'Enter your email to receive a fresh verification code directly to your mailbox.'}
               {mode === 'RESET' && 'Enter your 6-digit verification code and choose a new password.'}
             </p>
@@ -462,7 +569,7 @@ export default function AuthPage() {
                 setFeedback(null);
               }}
               className={`rounded-lg py-2 transition flex items-center justify-center gap-1.5 ${
-                mode === 'REGISTER' ? 'bg-cyan-300 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
+                mode === 'REGISTER' || mode === 'VERIFY_REGISTRATION' ? 'bg-cyan-300 text-slate-950 font-bold shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
               <UserIcon className="h-3.5 w-3.5" />
@@ -515,7 +622,7 @@ export default function AuthPage() {
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="e.g. delegate@example.com or gyan.dev9808@gmail.com"
+                      placeholder="e.g. yourname@gmail.com or diplomat@school.edu"
                       className="w-full rounded-xl border border-white/15 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
                     />
                   </div>
@@ -640,10 +747,10 @@ export default function AuthPage() {
                 <span>Create your diplomatic delegate profile to enter live committee sessions and caucus rooms.</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
                   <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Full Diplomat Name
+                    Full Name
                   </label>
                   <div className="relative">
                     <UserIcon className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
@@ -660,20 +767,49 @@ export default function AuthPage() {
 
                 <div>
                   <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Email Address
+                    Class / Grade
                   </label>
                   <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
-                    <input
+                    <GraduationCap className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                    <select
                       required
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="e.g. delegate@example.com"
-                      className="w-full rounded-xl border border-white/15 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
-                    />
+                      value={gradeClass}
+                      onChange={(e) => setGradeClass(e.target.value)}
+                      className="w-full rounded-xl border border-white/15 bg-slate-950/80 pl-10 pr-3 py-2.5 text-xs sm:text-sm text-white focus:border-cyan-300 focus:outline-none"
+                    >
+                      <option value="Class 6">Class 6</option>
+                      <option value="Class 7">Class 7</option>
+                      <option value="Class 8">Class 8</option>
+                      <option value="Class 9">Class 9</option>
+                      <option value="Class 10">Class 10</option>
+                      <option value="Class 11">Class 11</option>
+                      <option value="Class 12">Class 12</option>
+                    </select>
                   </div>
                 </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Email Address
+                  </label>
+                  <span className="text-[10px] text-cyan-300 font-medium">Real email required for verification</span>
+                </div>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
+                  <input
+                    required
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="e.g. yourname@gmail.com or delegate@school.edu"
+                    className="w-full rounded-xl border border-white/15 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Must be an active, real email address to receive your conference credentials and verification codes.
+                </p>
               </div>
 
               {/* Password & Confirm Password */}
@@ -738,63 +874,6 @@ export default function AuthPage() {
                 </div>
               )}
 
-              {/* Account Type Selector: Delegate vs Secretariat Admin */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 block">
-                  Account Type
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRegAccountType('DELEGATE')}
-                    className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition ${
-                      regAccountType === 'DELEGATE'
-                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200'
-                        : 'border-white/10 bg-slate-950/60 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Globe2 className="h-3.5 w-3.5" />
-                    <span>Distinguished Delegate</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRegAccountType('ADMIN')}
-                    className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition ${
-                      regAccountType === 'ADMIN'
-                        ? 'border-amber-400 bg-amber-950/40 text-amber-200'
-                        : 'border-white/10 bg-slate-950/60 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Shield className="h-3.5 w-3.5 text-amber-400" />
-                    <span>Secretariat Admin</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Secretariat Passkey Input if Admin is selected */}
-              {regAccountType === 'ADMIN' && (
-                <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
-                    <Shield className="h-4 w-4 shrink-0" />
-                    <span>Secretariat Authorization Passkey Required</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300">
-                    Only authorized conference staff may register an Admin account. Enter the Master Secretariat passkey (<code className="text-amber-300 font-mono">AdminSecretariat2026!</code>).
-                  </p>
-                  <div className="relative">
-                    <KeyRound className="w-4 h-4 text-amber-400 absolute left-3.5 top-3" />
-                    <input
-                      required
-                      type="password"
-                      value={secretariatPasskey}
-                      onChange={(e) => setSecretariatPasskey(e.target.value)}
-                      placeholder="Enter Secretariat Passkey"
-                      className="w-full rounded-xl border border-amber-500/40 bg-slate-950/90 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none font-mono"
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Cloudflare Captcha in Register */}
               <div className="space-y-1">
                 <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
@@ -817,22 +896,106 @@ export default function AuthPage() {
               <button
                 type="submit"
                 disabled={loading || !regCaptchaVerified}
-                className={`w-full rounded-xl py-3 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${
-                  regAccountType === 'ADMIN'
-                    ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-500/20'
-                    : 'bg-cyan-300 hover:bg-cyan-200 shadow-cyan-500/20'
-                }`}
+                className="w-full rounded-xl py-3 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed bg-cyan-300 hover:bg-cyan-200 shadow-cyan-500/20"
               >
                 {loading ? (
                   <RefreshCw className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
-                    <span>{regAccountType === 'ADMIN' ? 'Create Secretariat Admin Account & Open Console' : 'Create Delegate Account'}</span>
+                    <span>Create Delegate Account</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
             </form>
+          )}
+
+          {/* TAB 2B: REGISTRATION EMAIL VERIFICATION CODE */}
+          {mode === 'VERIFY_REGISTRATION' && (
+            <div className="space-y-4">
+              {/* Destination badge */}
+              <div className="rounded-2xl border border-cyan-500/30 bg-cyan-950/30 p-3.5 flex items-center justify-between">
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <div className="h-9 w-9 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <div className="truncate">
+                    <p className="text-[11px] text-slate-400 font-medium">Forwarded to Gmail</p>
+                    <p className="text-xs sm:text-sm font-bold text-white truncate">{pendingRegEmail}</p>
+                  </div>
+                </div>
+                <span className="shrink-0 text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full">
+                  Code Sent
+                </span>
+              </div>
+
+              <form onSubmit={handleVerifyRegistrationCode} className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">
+                    6-Digit Verification Code
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="w-4 h-4 text-cyan-400 absolute left-3.5 top-3.5" />
+                    <input
+                      autoFocus
+                      required
+                      maxLength={6}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={regCodeInput}
+                      onChange={(e) => setRegCodeInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="• • • • • •"
+                      className="w-full tracking-[8px] font-mono text-center text-lg sm:text-xl font-bold rounded-xl border border-cyan-400/50 bg-slate-950 pl-10 pr-4 py-3 text-cyan-300 placeholder-slate-600 focus:border-cyan-300 focus:ring-1 focus:ring-cyan-300 focus:outline-none"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1.5 flex items-center justify-between">
+                    <span>Check your Gmail inbox and spam folder</span>
+                    <span>Valid for 15 minutes</span>
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isVerifyingRegCode || regCodeInput.length < 6}
+                  className="w-full rounded-xl py-3 text-xs sm:text-sm font-bold text-slate-950 transition shadow-lg active:scale-95 flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed bg-cyan-300 hover:bg-cyan-200 shadow-cyan-500/20"
+                >
+                  {isVerifyingRegCode ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Verify & Activate Account</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+                <button
+                  type="button"
+                  disabled={resendCooldown > 0 || isResendingRegCode}
+                  onClick={handleResendRegistrationCode}
+                  className="text-cyan-300 hover:underline disabled:text-slate-500 disabled:no-underline flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isResendingRegCode ? 'animate-spin' : ''}`} />
+                  <span>
+                    {resendCooldown > 0 ? `Resend Code to Gmail in ${resendCooldown}s` : 'Resend Code to Gmail'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('REGISTER');
+                    setFeedback(null);
+                  }}
+                  className="text-slate-400 hover:text-white transition"
+                >
+                  ← Edit registration details
+                </button>
+              </div>
+            </div>
           )}
 
           {/* TAB 3: EMAIL VERIFICATION CODE (FRESH REGENERATION EVERY TIME) */}
@@ -850,7 +1013,7 @@ export default function AuthPage() {
                       type="email"
                       value={resetEmail}
                       onChange={(e) => setResetEmail(e.target.value)}
-                      placeholder="e.g. delegate@example.com or gyan.dev9808@gmail.com"
+                      placeholder="e.g. yourname@gmail.com or gyan.dev9808@gmail.com"
                       className="w-full rounded-xl border border-white/15 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
                     />
                   </div>
@@ -905,8 +1068,8 @@ export default function AuthPage() {
                         <Mail className="h-4 w-4" />
                       </div>
                       <div>
-                        <span className="text-xs font-bold text-white block">Verification Code Sent</span>
-                        <span className="text-[11px] text-emerald-400 font-mono">Dispatched to {emailCodeInfo.recipient}</span>
+                        <span className="text-xs font-bold text-white block">Verification Code Dispatched</span>
+                        <span className="text-[11px] text-emerald-400 font-mono">Sent to {emailCodeInfo.recipient}</span>
                       </div>
                     </div>
                     <span className="text-[10px] font-mono text-cyan-300 bg-cyan-400/10 px-2 py-0.5 rounded-full border border-cyan-400/20">
@@ -915,9 +1078,18 @@ export default function AuthPage() {
                   </div>
 
                   <div className="p-3.5 rounded-xl bg-slate-900 border border-white/10 space-y-3 text-xs">
-                    <p className="text-slate-300 leading-relaxed">
-                      We have sent a single-use 6-digit security code directly to your email address. Please open your email inbox, copy the code, and enter it below.
-                    </p>
+                    {emailCodeInfo.code ? (
+                      <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-1.5">
+                        <div className="text-[11px] font-bold text-amber-300">⚠️ SMTP Delivery Blocked by Google (Error 534: InvalidSecondFactor)</div>
+                        <p className="text-[11px] text-slate-300">
+                          Google rejected the App Password. For testing, your single-use code is <strong className="text-cyan-300 font-mono">{emailCodeInfo.code}</strong>.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-slate-300 leading-relaxed">
+                        We have sent a single-use 6-digit security code to your email. Please open your inbox (and spam folder), copy the code, and enter it to set your new password.
+                      </p>
+                    )}
 
                     <div className="flex flex-wrap gap-2 pt-1">
                       <button
@@ -925,7 +1097,7 @@ export default function AuthPage() {
                         onClick={() => setMode('RESET')}
                         className="flex-1 py-2.5 px-4 rounded-xl bg-cyan-300 hover:bg-cyan-200 text-slate-950 text-xs font-bold transition text-center shadow"
                       >
-                        Enter 6-Digit Code & Set Password →
+                        Proceed to Reset Password →
                       </button>
 
                       {/* Regenerate Fresh Code Button */}
@@ -936,7 +1108,7 @@ export default function AuthPage() {
                         className="py-2 px-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition"
                       >
                         <RotateCcw className={`h-3.5 w-3.5 text-cyan-300 ${isRegeneratingCode ? 'animate-spin' : ''}`} />
-                        <span>Resend Code</span>
+                        <span>Resend</span>
                       </button>
                     </div>
                   </div>
@@ -960,7 +1132,7 @@ export default function AuthPage() {
             <form onSubmit={handleResetSubmit} className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  6-Digit Verification Code / Reset Token
+                  6-Digit Verification Code
                 </label>
                 <div className="relative">
                   <Key className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />

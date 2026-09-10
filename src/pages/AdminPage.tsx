@@ -34,6 +34,7 @@ import { StaffAccount, MeetingRoom } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { PromptGenerator } from '../components/admin/PromptGenerator';
 import { addMeetingRoomNotification, deleteNotification } from '../utils/notifications';
+import { validateRealEmail } from '../utils/emailValidator';
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -88,7 +89,7 @@ export default function AdminPage() {
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState<'ADMIN' | 'CHAIR'>('ADMIN');
+  const newStaffRole = 'ADMIN';
 
   // Live meeting rooms initialized as empty - only created on-demand with one server per meeting
   const [meetings, setMeetings] = useState<MeetingRoom[]>(() => {
@@ -243,6 +244,12 @@ export default function AdminPage() {
       return;
     }
 
+    const emailCheck = validateRealEmail(emailClean);
+    if (!emailCheck.isValid) {
+      showNotice(emailCheck.error || 'Please enter a genuine, active email address.');
+      return;
+    }
+
     setIsCreatingStaff(true);
     try {
       const res = await fetch('/api/admin/create-account', {
@@ -250,10 +257,10 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: nameClean,
-          email: emailClean,
+          email: emailCheck.cleanEmail,
           password: passClean,
-          role: newStaffRole,
-          title: newStaffRole === 'ADMIN' ? 'Secretariat Administrator' : 'Executive Board (Chair)',
+          role: 'ADMIN',
+          title: 'Secretariat Administrator',
         }),
       });
 
@@ -263,7 +270,7 @@ export default function AdminPage() {
         return;
       }
 
-      showNotice(`Successfully created ${newStaffRole} account for ${nameClean}!`);
+      showNotice(`Successfully created Admin account for ${nameClean}!`);
       setNewStaffName('');
       setNewStaffEmail('');
       setNewStaffPassword('');
@@ -491,7 +498,7 @@ export default function AdminPage() {
                 <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-emerald-400/10 border border-emerald-400/20 flex items-center justify-center text-emerald-300 group-hover:scale-105 transition shadow-md">
                   <UserPlus className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <span className="text-xs font-semibold text-slate-200 mt-2.5">Staff & EB</span>
+                <span className="text-xs font-semibold text-slate-200 mt-2.5">Admin Accounts</span>
               </button>
 
               <button
@@ -542,7 +549,7 @@ export default function AdminPage() {
                 <div className="w-13 h-13 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 group-hover:scale-105 transition shadow-md">
                   <Users className="w-6 h-6 text-emerald-400" />
                 </div>
-                <span className="text-xs font-semibold text-slate-200 mt-2.5">Delegates (120)</span>
+                <span className="text-xs font-semibold text-slate-200 mt-2.5">Delegates & Allocations</span>
               </button>
 
               <button
@@ -552,7 +559,7 @@ export default function AdminPage() {
                 <div className="w-13 h-13 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 group-hover:scale-105 transition shadow-md">
                   <Layers className="w-6 h-6 text-indigo-400" />
                 </div>
-                <span className="text-xs font-semibold text-slate-200 mt-2.5">Committees (6)</span>
+                <span className="text-xs font-semibold text-slate-200 mt-2.5">Committees & Rosters</span>
               </button>
             </div>
           </section>
@@ -591,13 +598,13 @@ export default function AdminPage() {
               <div>
                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                  <span>Admin & Executive Board Accounts</span>
+                  <span>Secretariat Admin Accounts</span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-400/10 text-cyan-300 border border-cyan-400/20">
                     {staffList.length} Active
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Create new Secretariat Administrator or Chair accounts, or permanently delete accounts.
+                  Create and manage Secretariat Administrator accounts. Admins can create only Admin accounts.
                 </p>
               </div>
 
@@ -615,10 +622,15 @@ export default function AdminPage() {
 
             {/* Quick Admin Creation Form */}
             <form onSubmit={handleAddStaff} className="rounded-2xl bg-slate-950/70 border border-slate-800/80 p-4 space-y-3">
-              <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Create New Secretariat / Chair Account</span>
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Create New Admin Account</span>
+                </p>
+                <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/70 border border-cyan-500/20 px-2 py-0.5 rounded-md">
+                  Admin Only Creation
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <input
                   required
@@ -632,7 +644,7 @@ export default function AdminPage() {
                   type="email"
                   value={newStaffEmail}
                   onChange={(e) => setNewStaffEmail(e.target.value)}
-                  placeholder="Email address"
+                  placeholder="Email address (e.g. admin@org.com)"
                   className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
                 />
                 <input
@@ -643,14 +655,13 @@ export default function AdminPage() {
                   placeholder="Password (6+ chars)"
                   className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
                 />
-                <select
-                  value={newStaffRole}
-                  onChange={(e) => setNewStaffRole(e.target.value as 'ADMIN' | 'CHAIR')}
-                  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white focus:border-cyan-300 focus:outline-none"
-                >
-                  <option value="ADMIN">Secretariat Administrator (ADMIN)</option>
-                  <option value="CHAIR">Executive Board (CHAIR)</option>
-                </select>
+                <div className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-slate-900/90 px-3 py-2 text-xs">
+                  <Shield className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <div className="min-w-0 leading-tight">
+                    <p className="text-[11px] font-bold text-white truncate">Role: ADMIN</p>
+                    <p className="text-[9px] text-cyan-400/80 truncate">Secretariat Administrator</p>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-end">
                 <button
@@ -878,7 +889,7 @@ export default function AdminPage() {
                 <h3 className="mt-1 text-xl font-bold text-white">
                   {activeModal === 'MEETING'
                     ? 'Active Live Meetings'
-                    : 'Staff & Executive Board Roster'}
+                    : 'Secretariat Admin Accounts Roster'}
                 </h3>
               </div>
               <button
@@ -958,7 +969,7 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Modal: Staff & EB */}
+            {/* Modal: Admin Accounts */}
             {activeModal === 'STAFF' && (
               <div className="space-y-4">
                 <form onSubmit={handleAddStaff} className="grid gap-2.5 sm:grid-cols-2">
@@ -986,19 +997,19 @@ export default function AdminPage() {
                     placeholder="Password (8+ chars)"
                     className="rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-cyan-300 focus:outline-none"
                   />
-                  <select
-                    value={newStaffRole}
-                    onChange={(e) => setNewStaffRole(e.target.value as 'ADMIN' | 'CHAIR')}
-                    className="rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-xs text-white"
-                  >
-                    <option value="CHAIR">Executive Board (Chair)</option>
-                    <option value="ADMIN">Secretariat Administrator</option>
-                  </select>
+                  <div className="flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-slate-900/90 px-3.5 py-2 text-xs">
+                    <Shield className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <div className="min-w-0 leading-tight">
+                      <p className="text-xs font-bold text-white">Role: ADMIN</p>
+                      <p className="text-[10px] text-cyan-400/80">Secretariat Administrator (Exclusive)</p>
+                    </div>
+                  </div>
                   <button
                     type="submit"
-                    className="sm:col-span-2 rounded-xl bg-cyan-300 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition"
+                    disabled={isCreatingStaff}
+                    className="sm:col-span-2 rounded-xl bg-cyan-300 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-200 transition disabled:opacity-50 cursor-pointer"
                   >
-                    Create Account
+                    {isCreatingStaff ? 'Creating...' : '+ Create Admin Account'}
                   </button>
                 </form>
 

@@ -27,6 +27,12 @@ import {
   User,
   Copy,
   ExternalLink,
+  Globe,
+  Building2,
+  ShieldCheck,
+  AlertCircle,
+  ArrowRight,
+  Compass,
 } from 'lucide-react';
 import {
   getUnreadNotificationCount,
@@ -242,6 +248,123 @@ export default function DashboardPage() {
               Welcome Back, <span className="text-cyan-300">{userName}</span>
             </h1>
           </div>
+
+          {/* Official Diplomatic Delegation & Assigned Portfolio Card */}
+          {(() => {
+            const assignedCommittee = user?.committee?.trim() || '';
+            const assignedCountry = user?.country?.trim() || '';
+            const isAssigned = !!(assignedCommittee && assignedCountry);
+
+            return (
+              <section id="delegate-portfolio-card" className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900/90 p-6 md:p-8 backdrop-blur-xl shadow-2xl">
+                <div className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
+                <div className="absolute -left-16 -bottom-16 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                  {/* Left Column: Diplomatic Identity */}
+                  <div className="space-y-3 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/30 text-[11px] font-bold uppercase tracking-wider text-cyan-300">
+                        <ShieldCheck className="h-3.5 w-3.5 text-cyan-400" />
+                        <span>Official Diplomatic Credential</span>
+                      </span>
+                      {isAssigned ? (
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-black uppercase">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>Portfolio Active</span>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[10px] font-black uppercase">
+                          <AlertCircle className="h-3 w-3" />
+                          <span>Secretariat Allocation Pending</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2 flex-wrap">
+                        {isAssigned ? (
+                          <>
+                            <span>Delegate of</span>
+                            <span className="text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-0.5 rounded-xl font-black">
+                              {assignedCountry}
+                            </span>
+                          </>
+                        ) : (
+                          <span>Diplomatic Portfolio</span>
+                        )}
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-xl">
+                        {isAssigned
+                          ? `You are the accredited delegate representing ${assignedCountry} in the ${assignedCommittee}. Use your official chamber tools below to prepare policy, speeches, and caucus resolutions.`
+                          : 'Your committee and country delegation are currently being configured by the Secretariat. Once assigned in the admin console, your full diplomatic chamber credentials will activate here automatically.'}
+                      </p>
+                    </div>
+
+                    {/* Committee & Country Badges Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 max-w-2xl">
+                      {/* Assigned Committee */}
+                      <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 space-y-1">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          <Building2 className="h-3.5 w-3.5 text-cyan-400" />
+                          <span>Assigned Committee Chamber</span>
+                        </div>
+                        <div className="text-sm sm:text-base font-black text-white truncate">
+                          {assignedCommittee ? (
+                            <span className="text-cyan-300">{assignedCommittee}</span>
+                          ) : (
+                            <span className="text-slate-500 italic">Pending Secretariat Allocation</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Assigned Country */}
+                      <div className="rounded-2xl bg-slate-950/70 border border-white/10 p-4 space-y-1">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          <Globe className="h-3.5 w-3.5 text-amber-400" />
+                          <span>Assigned Country Delegation</span>
+                        </div>
+                        <div className="text-sm sm:text-base font-black text-white truncate">
+                          {assignedCountry ? (
+                            <span className="text-amber-300">{assignedCountry}</span>
+                          ) : (
+                            <span className="text-slate-500 italic">Pending Member State Assignment</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Quick Diplomatic Chamber Actions */}
+                  <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5 w-full lg:w-64 shrink-0">
+                    <button
+                      onClick={() => navigate('/committee')}
+                      className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 text-xs font-black shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 transition cursor-pointer"
+                    >
+                      <Building2 className="h-4 w-4" />
+                      <span>Open Committee Floor</span>
+                    </button>
+
+                    <button
+                      onClick={() => navigate('/meet')}
+                      className="w-full py-3 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+                    >
+                      <Video className="h-4 w-4 text-cyan-400" />
+                      <span>Join Chamber Video Meet</span>
+                    </button>
+
+                    <button
+                      onClick={() => navigate('/ai-doubt-clarifier')}
+                      className="w-full py-3 px-4 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+                    >
+                      <Bot className="h-4 w-4 text-purple-400" />
+                      <span>AI Diplomatic Assistant</span>
+                    </button>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
 
           {/* Quick Delegate Apps Launcher Grid */}
           <section className="space-y-3">

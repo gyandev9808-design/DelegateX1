@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless';
+import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
 export interface StoredUser {
@@ -6,6 +7,8 @@ export interface StoredUser {
   name: string;
   email: string;
   role: 'MASTER_ADMIN' | 'ADMIN' | 'CHAIR' | 'DELEGATE';
+  gradeClass?: string;
+  age?: number;
   title?: string;
   country?: string;
   committee?: string;
@@ -20,6 +23,23 @@ export interface PasswordResetEntry {
   email: string;
   expiresAt: number;
   used: boolean;
+}
+
+export interface PendingRegistration {
+  token: string;
+  code: string;
+  email: string;
+  name: string;
+  passwordHash: string;
+  gradeClass?: string;
+  role: 'DELEGATE';
+  title?: string;
+  country?: string;
+  committee?: string;
+  age?: number;
+  createdAt: number;
+  expiresAt: number;
+  verified: boolean;
 }
 
 export interface Participant {
@@ -144,11 +164,221 @@ export const seedAccounts = [
     passwordPlain: 'AdminPassword2026!',
     createdAt: 1741250000000,
   },
+  // Registered Delegates
+  {
+    id: 'del_alexandre_01',
+    name: 'Alexandre Moreau',
+    email: 'alexandre.moreau@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'France',
+    committee: 'UN Security Council (UNSC)',
+    gradeClass: 'Grade 12 / Senior',
+    avatarColor: 'from-blue-500 to-indigo-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_priya_02',
+    name: 'Priya Sharma',
+    email: 'priya.sharma@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'India',
+    committee: 'G20 Summit',
+    gradeClass: 'Grade 11 / Junior',
+    avatarColor: 'from-amber-500 to-orange-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_elena_03',
+    name: 'Elena Rostova',
+    email: 'elena.rostova@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Russian Federation',
+    committee: 'UN Security Council (UNSC)',
+    gradeClass: 'University Freshman',
+    avatarColor: 'from-rose-500 to-red-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_lucas_04',
+    name: 'Lucas Silva',
+    email: 'lucas.silva@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Brazil',
+    committee: 'UN General Assembly (UNGA)',
+    gradeClass: 'Grade 12 / Senior',
+    avatarColor: 'from-emerald-500 to-green-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_meiling_05',
+    name: 'Mei-Ling Zhou',
+    email: 'meiling.zhou@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: "People's Republic of China",
+    committee: 'UN Security Council (UNSC)',
+    gradeClass: 'University Sophomore',
+    avatarColor: 'from-red-500 to-pink-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_liam_06',
+    name: 'Liam O\'Connor',
+    email: 'liam.oconnor@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'United Kingdom',
+    committee: 'UN Security Council (UNSC)',
+    gradeClass: 'Grade 11 / Junior',
+    avatarColor: 'from-cyan-500 to-blue-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_fatima_07',
+    name: 'Fatima Al-Mansoor',
+    email: 'fatima.almansoor@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Saudi Arabia',
+    committee: 'G20 Summit',
+    gradeClass: 'Grade 12 / Senior',
+    avatarColor: 'from-teal-500 to-emerald-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_mateo_08',
+    name: 'Mateo Hernandez',
+    email: 'mateo.hernandez@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Mexico',
+    committee: 'UN Human Rights Council (UNHRC)',
+    gradeClass: 'Grade 10 / Sophomore',
+    avatarColor: 'from-violet-500 to-purple-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_chloe_09',
+    name: 'Chloe Dubois',
+    email: 'chloe.dubois@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Germany',
+    committee: 'UN Human Rights Council (UNHRC)',
+    gradeClass: 'University Junior',
+    avatarColor: 'from-yellow-500 to-amber-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_kenji_10',
+    name: 'Kenji Sato',
+    email: 'kenji.sato@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Japan',
+    committee: 'UN Security Council (UNSC)',
+    gradeClass: 'Grade 12 / Senior',
+    avatarColor: 'from-indigo-500 to-blue-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_sophia_11',
+    name: 'Sophia Müller',
+    email: 'sophia.muller@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Switzerland',
+    committee: 'UN Security Council (UNSC)',
+    gradeClass: 'Grade 11 / Junior',
+    avatarColor: 'from-pink-500 to-rose-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_tariq_12',
+    name: 'Tariq Al-Hassan',
+    email: 'tariq.alhassan@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Egypt',
+    committee: 'UN General Assembly (UNGA)',
+    gradeClass: 'Grade 12 / Senior',
+    avatarColor: 'from-orange-500 to-amber-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_aisha_13',
+    name: 'Aisha Abubakar',
+    email: 'aisha.abubakar@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: 'Nigeria',
+    committee: 'UN General Assembly (UNGA)',
+    gradeClass: 'Grade 11 / Junior',
+    avatarColor: 'from-emerald-500 to-teal-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_vikram_14',
+    name: 'Vikram Patel',
+    email: 'vikram.patel@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: '',
+    committee: '',
+    gradeClass: 'Grade 10 / Sophomore',
+    avatarColor: 'from-cyan-500 to-teal-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_hannah_15',
+    name: 'Hannah Lindqvist',
+    email: 'hannah.lindqvist@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: '',
+    committee: '',
+    gradeClass: 'Grade 11 / Junior',
+    avatarColor: 'from-sky-500 to-blue-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
+  {
+    id: 'del_carlos_16',
+    name: 'Carlos Mendez',
+    email: 'carlos.mendez@munmail.org',
+    role: 'DELEGATE' as const,
+    title: 'Distinguished Delegate',
+    country: '',
+    committee: '',
+    gradeClass: 'Grade 12 / Senior',
+    avatarColor: 'from-lime-500 to-emerald-600',
+    passwordPlain: 'Delegate2026!',
+    createdAt: 1741250000000,
+  },
 ];
 
 // In-Memory Fallbacks (used when DATABASE_URL is not set or during local preview)
 const memUsers = new Map<string, StoredUser>();
 const memResets = new Map<string, PasswordResetEntry>();
+const memPendingRegistrations = new Map<string, PendingRegistration>();
 const memRooms = new Map<string, RoomState>();
 const memNotifications = new Map<string, ServerNotification>();
 const memDismissedNotifications = new Set<string>();
@@ -170,22 +400,66 @@ seedAccounts.forEach((acc) => {
   });
 });
 
+const DEFAULT_NEON_URL =
+  'postgresql://neondb_owner:npg_PSoGpkW8X9Vx@ep-young-block-b3jsc94o-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require';
+
 const getConnectionString = (): string | undefined => {
   return (
     process.env.DATABASE_URL ||
     process.env.POSTGRES_URL ||
     process.env.POSTGRES_PRISMA_URL ||
-    process.env.POSTGRES_URL_NON_POOLING
+    process.env.POSTGRES_URL_NON_POOLING ||
+    DEFAULT_NEON_URL
   );
 };
 
 let dbInitialized = false;
 let initPromise: Promise<void> | null = null;
+let pgPoolInstance: Pool | null = null;
+let neonSqlInstance: any = null;
 
-function getSql() {
-  const connStr = getConnectionString();
-  if (!connStr) return null;
-  return neon(connStr);
+export function getSql(): ((strings: TemplateStringsArray, ...values: any[]) => Promise<any[]>) | null {
+  const rawConnStr = getConnectionString();
+  if (!rawConnStr) return null;
+
+  // Clean parameters that might interfere with HTTP fetch driver
+  const connStr = rawConnStr
+    .replace('&channel_binding=require', '')
+    .replace('channel_binding=require&', '')
+    .replace('?channel_binding=require', '?')
+    .replace(/\?$/, '');
+
+  // Neon serverless HTTP mode
+  if (connStr.includes('neon.tech') || connStr.includes('neondb')) {
+    if (!neonSqlInstance) {
+      neonSqlInstance = neon(connStr);
+    }
+    return neonSqlInstance;
+  }
+
+  // Supabase or standard PostgreSQL with pg Pool
+  if (!pgPoolInstance) {
+    pgPoolInstance = new Pool({
+      connectionString: connStr,
+      ssl: {
+        rejectUnauthorized: false,
+      },
+    });
+  }
+
+  return async (strings: TemplateStringsArray, ...values: any[]) => {
+    let queryText = '';
+    const params: any[] = [];
+    for (let i = 0; i < strings.length; i++) {
+      queryText += strings[i];
+      if (i < values.length) {
+        params.push(values[i]);
+        queryText += `$${params.length}`;
+      }
+    }
+    const res = await pgPoolInstance!.query(queryText, params);
+    return res.rows;
+  };
 }
 
 export async function ensureDb(): Promise<void> {
@@ -195,19 +469,20 @@ export async function ensureDb(): Promise<void> {
   initPromise = (async () => {
     const sql = getSql();
     if (!sql) {
-      console.log('ℹ️ [Database] Running with in-memory store. Set DATABASE_URL to connect to your Vercel Neon Postgres database.');
+      console.log('ℹ️ [Database] Running with in-memory store. Set DATABASE_URL to connect to your PostgreSQL database (Supabase, Neon, etc.).');
       dbInitialized = true;
       return;
     }
 
     try {
-      console.log('🔄 [Database] Connecting to Neon Postgres on Vercel...');
+      console.log('🔄 [Database] Connecting to PostgreSQL database (Supabase/Neon)...');
       await sql`
         CREATE TABLE IF NOT EXISTS users (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           email TEXT UNIQUE NOT NULL,
           role TEXT NOT NULL,
+          grade_class TEXT,
           title TEXT,
           country TEXT,
           committee TEXT,
@@ -217,6 +492,10 @@ export async function ensureDb(): Promise<void> {
         );
       `;
 
+      try {
+        await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS grade_class TEXT;`;
+      } catch {}
+
       await sql`
         CREATE TABLE IF NOT EXISTS password_resets (
           token TEXT PRIMARY KEY,
@@ -224,6 +503,25 @@ export async function ensureDb(): Promise<void> {
           email TEXT NOT NULL,
           expires_at BIGINT NOT NULL,
           used BOOLEAN DEFAULT FALSE
+        );
+      `;
+
+      await sql`
+        CREATE TABLE IF NOT EXISTS pending_registrations (
+          token TEXT PRIMARY KEY,
+          code TEXT NOT NULL,
+          email TEXT NOT NULL,
+          name TEXT NOT NULL,
+          password_hash TEXT NOT NULL,
+          grade_class TEXT,
+          role TEXT NOT NULL,
+          title TEXT,
+          country TEXT,
+          committee TEXT,
+          age INTEGER,
+          created_at BIGINT NOT NULL,
+          expires_at BIGINT NOT NULL,
+          verified BOOLEAN DEFAULT FALSE
         );
       `;
 
@@ -315,7 +613,7 @@ export async function getUserByEmail(email: string): Promise<StoredUser | null> 
   await ensureDb();
   try {
     const rows = await sql`
-      SELECT id, name, email, role, title, country, committee, password_hash as "passwordHash", avatar_color as "avatarColor", created_at as "createdAt"
+      SELECT id, name, email, role, grade_class as "gradeClass", title, country, committee, password_hash as "passwordHash", avatar_color as "avatarColor", created_at as "createdAt"
       FROM users
       WHERE email = ${cleanEmail}
       LIMIT 1;
@@ -327,6 +625,7 @@ export async function getUserByEmail(email: string): Promise<StoredUser | null> 
       name: r.name,
       email: r.email,
       role: r.role as any,
+      gradeClass: r.gradeClass,
       title: r.title,
       country: r.country,
       committee: r.committee,
@@ -349,11 +648,12 @@ export async function saveUser(user: StoredUser): Promise<void> {
   await ensureDb();
   try {
     await sql`
-      INSERT INTO users (id, name, email, role, title, country, committee, avatar_color, password_hash, created_at)
-      VALUES (${user.id}, ${user.name}, ${cleanEmail}, ${user.role}, ${user.title || ''}, ${user.country || ''}, ${user.committee || ''}, ${user.avatarColor || ''}, ${user.passwordHash || ''}, ${user.createdAt})
+      INSERT INTO users (id, name, email, role, grade_class, title, country, committee, avatar_color, password_hash, created_at)
+      VALUES (${user.id}, ${user.name}, ${cleanEmail}, ${user.role}, ${user.gradeClass || ''}, ${user.title || ''}, ${user.country || ''}, ${user.committee || ''}, ${user.avatarColor || ''}, ${user.passwordHash || ''}, ${user.createdAt})
       ON CONFLICT (email) DO UPDATE SET
         name = EXCLUDED.name,
         role = EXCLUDED.role,
+        grade_class = EXCLUDED.grade_class,
         title = EXCLUDED.title,
         country = EXCLUDED.country,
         committee = EXCLUDED.committee,
@@ -417,6 +717,62 @@ export async function deleteUserByIdOrEmail(identifier: string, secondIdentifier
   }
 }
 
+export async function getUserById(id: string): Promise<StoredUser | null> {
+  const cleanId = (id || '').trim();
+  const sql = getSql();
+  if (!sql) {
+    for (const u of memUsers.values()) {
+      if (u.id === cleanId) return u;
+    }
+    return null;
+  }
+  await ensureDb();
+  try {
+    const rows = await sql`
+      SELECT id, name, email, role, grade_class as "gradeClass", title, country, committee, password_hash as "passwordHash", avatar_color as "avatarColor", created_at as "createdAt"
+      FROM users
+      WHERE id = ${cleanId}
+      LIMIT 1;
+    `;
+    if (rows.length === 0) {
+      for (const u of memUsers.values()) {
+        if (u.id === cleanId) return u;
+      }
+      return null;
+    }
+    const r = rows[0];
+    return {
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      role: r.role as any,
+      gradeClass: r.gradeClass,
+      title: r.title,
+      country: r.country,
+      committee: r.committee,
+      passwordHash: r.passwordHash,
+      avatarColor: r.avatarColor,
+      createdAt: Number(r.createdAt),
+    };
+  } catch (err) {
+    console.error('Error fetching user by ID from Neon:', err);
+    for (const u of memUsers.values()) {
+      if (u.id === cleanId) return u;
+    }
+    return null;
+  }
+}
+
+export async function getUserByIdOrEmail(identifier: string): Promise<StoredUser | null> {
+  if (!identifier) return null;
+  const clean = identifier.toLowerCase().trim();
+  if (clean.includes('@')) {
+    const byEmail = await getUserByEmail(clean);
+    if (byEmail) return byEmail;
+  }
+  return await getUserById(identifier);
+}
+
 export async function getAllUsers(): Promise<Omit<StoredUser, 'passwordHash'>[]> {
   const sql = getSql();
   if (!sql) {
@@ -425,7 +781,7 @@ export async function getAllUsers(): Promise<Omit<StoredUser, 'passwordHash'>[]>
   await ensureDb();
   try {
     const rows = await sql`
-      SELECT id, name, email, role, title, country, committee, avatar_color as "avatarColor", created_at as "createdAt"
+      SELECT id, name, email, role, grade_class as "gradeClass", title, country, committee, avatar_color as "avatarColor", created_at as "createdAt"
       FROM users
       ORDER BY created_at DESC;
     `;
@@ -434,6 +790,7 @@ export async function getAllUsers(): Promise<Omit<StoredUser, 'passwordHash'>[]>
       name: r.name,
       email: r.email,
       role: r.role as any,
+      gradeClass: r.gradeClass,
       title: r.title,
       country: r.country,
       committee: r.committee,
@@ -469,7 +826,10 @@ export async function savePasswordReset(entry: PasswordResetEntry): Promise<void
 }
 
 export async function getPasswordReset(key: string): Promise<PasswordResetEntry | null> {
-  const memEntry = memResets.get(key);
+  const cleanKey = (key || '').trim().replace(/[\s-]/g, '');
+  if (!cleanKey) return null;
+
+  const memEntry = memResets.get(cleanKey) || memResets.get(key.trim());
   const sql = getSql();
   if (!sql) return memEntry || null;
 
@@ -478,7 +838,7 @@ export async function getPasswordReset(key: string): Promise<PasswordResetEntry 
     const rows = await sql`
       SELECT token, code, email, expires_at as "expiresAt", used
       FROM password_resets
-      WHERE token = ${key} OR code = ${key}
+      WHERE token = ${cleanKey} OR code = ${cleanKey} OR token = ${key.trim()} OR code = ${key.trim()}
       LIMIT 1;
     `;
     if (rows.length === 0) return memEntry || null;
@@ -496,9 +856,12 @@ export async function getPasswordReset(key: string): Promise<PasswordResetEntry 
   }
 }
 
-export async function markPasswordResetUsed(token: string): Promise<void> {
-  const memEntry = memResets.get(token);
-  if (memEntry) memEntry.used = true;
+export async function markPasswordResetUsed(tokenOrCode: string): Promise<void> {
+  const cleanKey = (tokenOrCode || '').trim().replace(/[\s-]/g, '');
+  const memEntry = memResets.get(cleanKey) || memResets.get(tokenOrCode.trim());
+  if (memEntry) {
+    memEntry.used = true;
+  }
 
   const sql = getSql();
   if (!sql) return;
@@ -507,10 +870,122 @@ export async function markPasswordResetUsed(token: string): Promise<void> {
     await sql`
       UPDATE password_resets
       SET used = TRUE
-      WHERE token = ${token};
+      WHERE token = ${cleanKey} OR code = ${cleanKey} OR token = ${tokenOrCode.trim()} OR code = ${tokenOrCode.trim()};
     `;
   } catch (err) {
     console.error('Error marking reset used in Neon:', err);
+  }
+}
+
+// Pending Registration operations (Email Verification before activation)
+export async function savePendingRegistration(entry: PendingRegistration): Promise<void> {
+  const cleanEmail = entry.email.toLowerCase().trim();
+  memPendingRegistrations.set(entry.token, entry);
+  memPendingRegistrations.set(entry.code, entry);
+  memPendingRegistrations.set(cleanEmail, entry);
+
+  const sql = getSql();
+  if (!sql) return;
+  await ensureDb();
+  try {
+    await sql`
+      INSERT INTO pending_registrations (token, code, email, name, password_hash, grade_class, role, title, country, committee, age, created_at, expires_at, verified)
+      VALUES (
+        ${entry.token},
+        ${entry.code},
+        ${cleanEmail},
+        ${entry.name},
+        ${entry.passwordHash},
+        ${entry.gradeClass || null},
+        ${entry.role},
+        ${entry.title || null},
+        ${entry.country || null},
+        ${entry.committee || null},
+        ${entry.age || null},
+        ${entry.createdAt},
+        ${entry.expiresAt},
+        ${entry.verified}
+      )
+      ON CONFLICT (token) DO UPDATE SET
+        code = EXCLUDED.code,
+        email = EXCLUDED.email,
+        name = EXCLUDED.name,
+        password_hash = EXCLUDED.password_hash,
+        grade_class = EXCLUDED.grade_class,
+        role = EXCLUDED.role,
+        title = EXCLUDED.title,
+        country = EXCLUDED.country,
+        committee = EXCLUDED.committee,
+        age = EXCLUDED.age,
+        created_at = EXCLUDED.created_at,
+        expires_at = EXCLUDED.expires_at,
+        verified = EXCLUDED.verified;
+    `;
+  } catch (err) {
+    console.error('Error saving pending registration to database:', err);
+  }
+}
+
+export async function getPendingRegistration(key: string): Promise<PendingRegistration | null> {
+  const cleanKey = (key || '').trim().toLowerCase().replace(/[\s-]/g, '');
+  if (!cleanKey) return null;
+
+  const memEntry = memPendingRegistrations.get(cleanKey) || memPendingRegistrations.get(key.trim().toLowerCase());
+  const sql = getSql();
+  if (!sql) return memEntry || null;
+
+  await ensureDb();
+  try {
+    const rows = await sql`
+      SELECT token, code, email, name, password_hash as "passwordHash", grade_class as "gradeClass", role, title, country, committee, age, created_at as "createdAt", expires_at as "expiresAt", verified
+      FROM pending_registrations
+      WHERE token = ${cleanKey} OR code = ${cleanKey} OR email = ${cleanKey}
+      ORDER BY created_at DESC
+      LIMIT 1;
+    `;
+    if (rows.length === 0) return memEntry || null;
+    const r = rows[0];
+    return {
+      token: r.token,
+      code: r.code,
+      email: r.email,
+      name: r.name,
+      passwordHash: r.passwordHash,
+      gradeClass: r.gradeClass || undefined,
+      role: 'DELEGATE',
+      title: r.title || 'Delegate',
+      country: r.country || '',
+      committee: r.committee || '',
+      age: r.age ? Number(r.age) : undefined,
+      createdAt: Number(r.createdAt),
+      expiresAt: Number(r.expiresAt),
+      verified: Boolean(r.verified),
+    };
+  } catch (err) {
+    console.error('Error fetching pending registration from database:', err);
+    return memEntry || null;
+  }
+}
+
+export async function deletePendingRegistration(key: string): Promise<void> {
+  const cleanKey = (key || '').trim().toLowerCase();
+  memPendingRegistrations.delete(cleanKey);
+  for (const [k, v] of memPendingRegistrations.entries()) {
+    if (v.token === cleanKey || v.code === cleanKey || v.email === cleanKey) {
+      memPendingRegistrations.delete(k);
+    }
+  }
+
+  const sql = getSql();
+  if (!sql) return;
+  await ensureDb();
+  try {
+    await sql`
+      DELETE FROM pending_registrations
+      WHERE token = ${cleanKey} OR code = ${cleanKey} OR email = ${cleanKey};
+    `;
+  } catch (err) {
+    console.error('Error deleting pending registration:', err);
   }
 }
 

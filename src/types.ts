@@ -7,6 +7,8 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  gradeClass?: string;
+  age?: number;
   title?: string;
   country?: string;
   committee?: string;
@@ -65,4 +67,30 @@ export interface TrainingModule {
     sampleScript?: string;
     proTip: string;
   };
+}
+
+export type RollCallStatus = 'PRESENT' | 'PRESENT_AND_VOTING' | 'ABSENT';
+
+export interface CommitteeCountry {
+  id: string;
+  name: string;
+  flag?: string;
+  status: RollCallStatus;
+  assignedDelegate?: string;
+  p5?: boolean;
+  bloc?: string;
+  notes?: string;
+}
+
+export interface CommitteeItem {
+  id: string;
+  code: string;
+  name: string;
+  topic: string;
+  category: string;
+  description?: string;
+  chairName?: string;
+  countries: CommitteeCountry[];
+  createdAt: number;
+  updatedAt: number;
 }

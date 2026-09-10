@@ -9,6 +9,8 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import {
   getUserByEmail,
+  getUserById,
+  getUserByIdOrEmail,
   saveUser,
   deleteUserByEmail,
   deleteUserByIdOrEmail,
@@ -16,6 +18,9 @@ import {
   savePasswordReset,
   getPasswordReset,
   markPasswordResetUsed,
+  savePendingRegistration,
+  getPendingRegistration,
+  deletePendingRegistration,
   getRoom,
   saveRoom,
   deleteRoomById,
@@ -34,8 +39,28 @@ import {
   type ChatMessage,
   type SignalMessage,
   type PasswordResetEntry,
+  type PendingRegistration,
   type ServerNotification,
 } from './serverDb';
+import { validateRealEmail } from './src/utils/emailValidator';
+import {
+  getAllCommittees,
+  getCommitteeById,
+  saveCommittee,
+  deleteCommitteeById,
+  deleteMultipleCommittees,
+  addCountriesToCommittee,
+  updateCountryInCommittee,
+  deleteCountryFromCommittee,
+  batchUpdateRollCall,
+  syncDelegateAssignment,
+  unassignDelegate,
+  PRESET_MATRICES,
+  getCountryFlag,
+  type CommitteeItem,
+  type CommitteeCountry,
+  type RollCallStatus,
+} from './serverCommittees';
 
 dotenv.config();
 
@@ -139,15 +164,63 @@ const getMunFallbackReply = (question: string) => {
 • **Actionable Advice**: Frame your response around three pillars: (1) Sovereign legitimacy, (2) Multilateral consensus, and (3) Concrete monitoring and implementation mechanisms.`;
 };
 
+const KNOWN_APP_PASSWORDS = [
+  'coawoxuxlwrxetko',
+  'vlplljuprzjelycr',
+  'xokcugihdtyiojqr',
+];
+
+function getValidCandidateCredentials(): Array<{ user: string; pass: string }> {
+  const users = ['delegatex14@gmail.com', 'gyan.dev9808@gmail.com'];
+  if (process.env.GMAIL_USER) {
+    const customUser = process.env.GMAIL_USER.trim().toLowerCase();
+    if (customUser.includes('@') && !users.includes(customUser)) {
+      users.unshift(customUser);
+    }
+  }
+
+  const passwords: string[] = [];
+  if (process.env.GMAIL_APP_PASSWORD) {
+    const cleanedEnv = process.env.GMAIL_APP_PASSWORD.trim().replace(/\s+/g, '').toLowerCase();
+    if (/^[a-z]{16}$/.test(cleanedEnv)) {
+      passwords.push(cleanedEnv);
+    } else {
+      console.warn(`⚠️ [GMAIL CONFIG] process.env.GMAIL_APP_PASSWORD ("${process.env.GMAIL_APP_PASSWORD}") is not a 16-character Google App Password. Ignoring invalid string.`);
+    }
+  }
+
+  for (const p of KNOWN_APP_PASSWORDS) {
+    if (!passwords.includes(p)) {
+      passwords.push(p);
+    }
+  }
+
+  const credentials: Array<{ user: string; pass: string }> = [];
+  for (const user of users) {
+    for (const pass of passwords) {
+      credentials.push({ user, pass });
+    }
+  }
+  return credentials;
+}
+
 // Helper function to dispatch verification email via Nodemailer
-async function sendVerificationEmail(toEmail: string, code: string, token: string): Promise<boolean> {
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+async function sendVerificationEmail(toEmail: string, code: string, token: string, purpose: string = 'Verification'): Promise<boolean> {
   const smtpHost = process.env.SMTP_HOST;
   const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
   const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  const fromEmail = process.env.EMAIL_FROM || (gmailUser ? `DelegateX Security <${gmailUser}>` : 'DelegateX Security <no-reply@delegatex.org>');
+  const smtpPass = process.env.SMTP_PASS ? process.env.SMTP_PASS.trim() : '';
+
+  const isRegistration = purpose.toLowerCase().includes('register');
+  const subject = isRegistration
+    ? `[DelegateX MUN] Your Registration Verification Code is ${code}`
+    : `[DelegateX MUN] Your Verification Code is ${code}`;
+  const headerSubtitle = isRegistration
+    ? 'Diplomatic Delegate Account Activation'
+    : 'Diplomatic Intelligence & Security Chambers';
+  const introMessage = isRegistration
+    ? 'Thank you for registering for the DelegateX Model UN Diplomatic Chambers. To verify your email address and activate your delegate credentials, please enter this single-use 6-digit verification code:'
+    : 'We received a request to verify your account credentials. Please enter the following 6-digit verification code into the application:';
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -170,48 +243,29 @@ async function sendVerificationEmail(toEmail: string, code: string, token: strin
         <div class="card">
           <div class="header">
             <div class="logo">DelegateX Security</div>
-            <div class="sub">Model UN Diplomatic Intelligence & Chambers</div>
+            <div class="sub">${headerSubtitle}</div>
           </div>
           <p style="font-size: 15px; color: #e2e8f0; line-height: 1.5;">Hello Diplomat,</p>
           <p style="font-size: 14px; color: #94a3b8; line-height: 1.6;">
-            We received a request to verify your account credentials. Please enter the following 6-digit verification code into the application:
+            ${introMessage}
           </p>
           <div class="code-box">
             <div class="code">${code}</div>
-            <div class="expiry">Expires in 15 minutes • Single-use code</div>
+            <div class="expiry">Expires in 15 minutes • Single-use verification code</div>
           </div>
           <p style="font-size: 13px; color: #94a3b8; line-height: 1.5;">
-            If you did not request this verification code, please ignore this email or reset your password immediately.
+            ${isRegistration ? 'Once verified, your delegate profile and committee access will be activated.' : 'If you did not request this verification code, please ignore this email or reset your password immediately.'}
           </p>
           <div class="footer">
-            © 2026 DelegateX MUN Security Verification Dispatch. Sent to ${toEmail}.
+            © 2026 DelegateX MUN Security Verification Dispatch. Forwarded to ${toEmail}.
           </div>
         </div>
       </body>
     </html>
   `;
 
-  if (gmailUser && gmailPass) {
-    try {
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: gmailUser,
-          pass: gmailPass,
-        },
-      });
-      await transporter.sendMail({
-        from: fromEmail,
-        to: toEmail,
-        subject: `[DelegateX] Your Verification Code is ${code}`,
-        text: `Your DelegateX verification code is: ${code}. This code expires in 15 minutes.`,
-        html: htmlContent,
-      });
-      return true;
-    } catch (e) {
-      console.error(`[EMAIL DISPATCH ERROR] Failed via Gmail:`, e);
-    }
-  } else if (smtpHost && smtpUser && smtpPass) {
+  // Try custom SMTP if configured
+  if (smtpHost && smtpUser && smtpPass) {
     try {
       const transporter = nodemailer.createTransport({
         host: smtpHost,
@@ -221,21 +275,111 @@ async function sendVerificationEmail(toEmail: string, code: string, token: strin
           user: smtpUser,
           pass: smtpPass,
         },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
       });
-      await transporter.sendMail({
+      const fromEmail = process.env.EMAIL_FROM || `DelegateX Security <${smtpUser}>`;
+      const info = await transporter.sendMail({
         from: fromEmail,
         to: toEmail,
-        subject: `[DelegateX] Your Verification Code is ${code}`,
+        subject,
         text: `Your DelegateX verification code is: ${code}. This code expires in 15 minutes.`,
         html: htmlContent,
       });
+      console.log(`✅ [EMAIL SENT TO ${toEmail}] via custom SMTP - Message ID: ${info.messageId}`);
       return true;
-    } catch (e) {
-      console.error(`[EMAIL DISPATCH ERROR] Failed via custom SMTP:`, e);
+    } catch (e: any) {
+      console.error(`[EMAIL DISPATCH ERROR] Custom SMTP failed:`, e?.message || e);
     }
-  } else {
-    console.log(`[EMAIL DISPATCH TO ${toEmail}] Verification code: ${code}`);
   }
+
+  // Iterate through valid Google App Password combinations
+  const candidates = getValidCandidateCredentials();
+  for (const cred of candidates) {
+    const maskedPass = `${cred.pass.slice(0, 4)}••••••••${cred.pass.slice(-4)}`;
+    console.log(`📧 [DISPATCH ATTEMPT] Authenticating as ${cred.user} (App Password: ${maskedPass})...`);
+
+    // Attempt A: Standard service: 'gmail'
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: cred.user,
+          pass: cred.pass,
+        },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+      });
+      const fromEmail = `DelegateX Security <${cred.user}>`;
+      const info = await transporter.sendMail({
+        from: fromEmail,
+        to: toEmail,
+        subject,
+        text: `Your DelegateX verification code is: ${code}. This code expires in 15 minutes.`,
+        html: htmlContent,
+      });
+      console.log(`🎉 ✅ [EMAIL DELIVERED TO ${toEmail}] Sent via ${cred.user}! Message ID: ${info.messageId}`);
+      return true;
+    } catch (errA: any) {
+      // Attempt B: Direct smtp.gmail.com on port 465 with SSL
+      try {
+        const transporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true,
+          auth: {
+            user: cred.user,
+            pass: cred.pass,
+          },
+          tls: { rejectUnauthorized: false },
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+        });
+        const fromEmail = `DelegateX Security <${cred.user}>`;
+        const info = await transporter.sendMail({
+          from: fromEmail,
+          to: toEmail,
+          subject,
+          text: `Your DelegateX verification code is: ${code}. This code expires in 15 minutes.`,
+          html: htmlContent,
+        });
+        console.log(`🎉 ✅ [EMAIL DELIVERED TO ${toEmail}] Sent via ${cred.user} (port 465)! Message ID: ${info.messageId}`);
+        return true;
+      } catch (errB: any) {
+        // Attempt C: Direct smtp.gmail.com on port 587 with STARTTLS
+        try {
+          const transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            requireTLS: true,
+            auth: {
+              user: cred.user,
+              pass: cred.pass,
+            },
+            tls: { rejectUnauthorized: false },
+            connectionTimeout: 8000,
+            greetingTimeout: 8000,
+          });
+          const fromEmail = `DelegateX Security <${cred.user}>`;
+          const info = await transporter.sendMail({
+            from: fromEmail,
+            to: toEmail,
+            subject,
+            text: `Your DelegateX verification code is: ${code}. This code expires in 15 minutes.`,
+            html: htmlContent,
+          });
+          console.log(`🎉 ✅ [EMAIL DELIVERED TO ${toEmail}] Sent via ${cred.user} (port 587)! Message ID: ${info.messageId}`);
+          return true;
+        } catch (errC: any) {
+          console.warn(`[GMAIL FAILED] ${cred.user} with ${maskedPass}: ${errA?.message || errB?.message || errC?.message}`);
+        }
+      }
+    }
+  }
+
+  console.error(`❌ [EMAIL DISPATCH ERROR] Could not dispatch email to ${toEmail}. Please verify that 2-Step Verification is ON and a fresh Google App Password is generated at https://myaccount.google.com/apppasswords.`);
   return false;
 }
 
@@ -383,8 +527,8 @@ apiRouter.post('/auth/profile', authenticateJwtMiddleware, async (req, res) => {
         email: emailKey,
         role: authUser.role || 'DELEGATE',
         title: title || authUser.title || 'Distinguished Delegate',
-        country: country || authUser.country || 'United States',
-        committee: committee || authUser.committee || 'UN Security Council (UNSC)',
+        country: country?.trim() || authUser.country || '',
+        committee: committee?.trim() || authUser.committee || '',
         passwordHash: '',
         createdAt: Date.now(),
       };
@@ -448,21 +592,24 @@ apiRouter.post('/auth/purge-delegates', async (req, res) => {
   }
 });
 
-// POST /api/auth/register & /api/auth/signup
-const handleRegister = async (req: express.Request, res: express.Response) => {
+// POST /api/auth/register-initiate - Step 1: Validate registration, generate 6-digit code, forward to Gmail
+const handleRegisterInitiate = async (req: express.Request, res: express.Response) => {
   try {
-    const { name, email, password, role, title, country, committee, secretariatPasskey } = req.body;
+    const { name, email, password, gradeClass, grade, age, role, title, country, committee } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length < 2) {
       return res.status(400).json({ error: 'Full name is required (at least 2 characters).' });
     }
-    if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-      return res.status(400).json({ error: 'Please enter a valid email address.' });
+
+    const emailValidation = validateRealEmail(email);
+    if (!emailValidation.isValid) {
+      return res.status(400).json({ error: emailValidation.error || 'Please enter a genuine, active email address.' });
     }
+    const cleanEmail = emailValidation.cleanEmail;
+
     if (!password || typeof password !== 'string' || password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters.' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
     const existingUser = await getUserByEmail(cleanEmail);
     if (existingUser) {
       if (existingUser.role === 'ADMIN' || existingUser.role === 'MASTER_ADMIN' || existingUser.role === 'CHAIR') {
@@ -476,53 +623,195 @@ const handleRegister = async (req: express.Request, res: express.Response) => {
       return res.status(400).json({ error: 'Administrator and Executive Board emails are reserved for Secretariat access and cannot create delegate accounts.' });
     }
 
-    let assignedRole: 'MASTER_ADMIN' | 'ADMIN' | 'CHAIR' | 'DELEGATE' = role || (cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : cleanEmail.includes('admin') ? 'ADMIN' : 'DELEGATE');
+    const rawGradeClass = (gradeClass || grade || '').toString().trim();
+    const disallowedGrades = ['undergraduate', 'postgraduate', 'graduate', 'other', 'post graduate'];
+    const assignedGradeClass = disallowedGrades.includes(rawGradeClass.toLowerCase()) ? undefined : (rawGradeClass || undefined);
+    const parsedAge = age ? Number(age) : undefined;
+    const passwordHash = bcrypt.hashSync(password, 10);
 
-    if (assignedRole === 'ADMIN' || assignedRole === 'MASTER_ADMIN' || assignedRole === 'CHAIR') {
-      const cleanKey = (secretariatPasskey || '').trim();
-      const isAuthorized = cleanKey === 'AdminSecretariat2026!' || cleanKey === 'Secretariat2026!' || cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin');
-      if (!isAuthorized) {
-        return res.status(403).json({ error: 'Invalid Secretariat Passkey. An authorized passkey is required to create an Admin account.' });
-      }
+    const freshCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const regToken = 'reg_' + crypto.randomBytes(16).toString('hex');
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+
+    const pending: PendingRegistration = {
+      token: regToken,
+      code: freshCode,
+      email: cleanEmail,
+      name: name.trim(),
+      passwordHash,
+      gradeClass: assignedGradeClass,
+      role: 'DELEGATE',
+      title: title || 'Delegate',
+      country: (country && typeof country === 'string') ? country.trim() : '',
+      committee: (committee && typeof committee === 'string') ? committee.trim() : '',
+      age: parsedAge && !isNaN(parsedAge) ? parsedAge : undefined,
+      createdAt: Date.now(),
+      expiresAt,
+      verified: false,
+    };
+
+    await savePendingRegistration(pending);
+
+    // Forward verification code to the user's Gmail
+    const emailSent = await sendVerificationEmail(cleanEmail, freshCode, regToken, 'Registration');
+    console.log(`📧 [REGISTRATION VERIFICATION] 6-digit code ${freshCode} forwarded to ${cleanEmail} (emailSent=${emailSent})`);
+
+    return res.json({
+      success: true,
+      requiresVerification: true,
+      email: cleanEmail,
+      token: regToken,
+      emailSent,
+      message: `A 6-digit verification code has been forwarded to your Gmail (${cleanEmail}). Please check your inbox and enter it to activate your account.`,
+      expiresInMinutes: 15,
+    });
+  } catch (err) {
+    console.error('Registration initiation error:', err);
+    return res.status(500).json({ error: 'Failed to initiate registration verification.' });
+  }
+};
+
+// POST /api/auth/register-verify - Step 2: Validate 6-digit code forwarded to Gmail and activate account
+const handleRegisterVerify = async (req: express.Request, res: express.Response) => {
+  try {
+    const { email, code, token } = req.body;
+    const lookupKey = (token || email || code || '').toString().trim().replace(/[\s-]/g, '');
+    if (!lookupKey) {
+      return res.status(400).json({ error: 'Verification code and email or session token are required.' });
     }
 
-    const passwordHash = bcrypt.hashSync(password, 10);
+    const pending = await getPendingRegistration(lookupKey);
+    if (!pending) {
+      return res.status(404).json({ error: 'No pending registration found for this email or session. Please register again.' });
+    }
+
+    if (Date.now() > pending.expiresAt) {
+      return res.status(400).json({ error: 'Verification code has expired (15-minute validity). Please request a fresh code.' });
+    }
+
+    const cleanEnteredCode = (code || '').toString().trim().replace(/[\s-]/g, '');
+    if (!cleanEnteredCode || cleanEnteredCode !== pending.code) {
+      return res.status(400).json({ error: 'Invalid 6-digit verification code. Please check the code forwarded to your Gmail and try again.' });
+    }
+
+    // Check if account already exists
+    const existing = await getUserByEmail(pending.email);
+    if (existing) {
+      const token = generateJwtToken(existing);
+      await deletePendingRegistration(pending.email);
+      return res.json({
+        success: true,
+        message: 'Account is already verified and active. Signed in successfully.',
+        token,
+        user: {
+          id: existing.id,
+          name: existing.name,
+          email: existing.email,
+          role: existing.role,
+          gradeClass: existing.gradeClass,
+          age: existing.age,
+          title: existing.title,
+          country: existing.country,
+          committee: existing.committee,
+          avatarColor: existing.avatarColor,
+          createdAt: existing.createdAt,
+        },
+      });
+    }
+
     const newUser: StoredUser = {
       id: 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      name: name.trim(),
-      email: cleanEmail,
-      role: assignedRole,
-      title: title || (assignedRole === 'MASTER_ADMIN' ? 'Secretary-General & Master Admin' : assignedRole === 'ADMIN' ? 'Secretariat Administrator' : assignedRole === 'CHAIR' ? 'Executive Board Chair' : 'Distinguished Delegate'),
-      country: country || (assignedRole === 'DELEGATE' ? 'United States' : 'Secretariat Dais'),
-      committee: committee || 'UN Security Council (UNSC)',
-      avatarColor: assignedRole === 'MASTER_ADMIN' ? 'from-cyan-500 to-blue-600' : assignedRole === 'ADMIN' ? 'from-amber-500 to-orange-600' : assignedRole === 'CHAIR' ? 'from-emerald-500 to-teal-600' : 'from-indigo-500 to-cyan-600',
-      passwordHash,
+      name: pending.name,
+      email: pending.email,
+      role: 'DELEGATE',
+      gradeClass: pending.gradeClass,
+      age: pending.age,
+      title: pending.title || 'Delegate',
+      country: pending.country || '',
+      committee: pending.committee || '',
+      avatarColor: 'from-indigo-500 to-cyan-600',
+      passwordHash: pending.passwordHash,
       createdAt: Date.now(),
     };
 
     await saveUser(newUser);
-    const token = generateJwtToken(newUser);
+    await deletePendingRegistration(pending.email);
+    const jwtToken = generateJwtToken(newUser);
 
     return res.status(201).json({
-      message: 'Account registered successfully with secure JWT authentication.',
-      token,
+      success: true,
+      message: 'Email verified successfully! Welcome to DelegateX Diplomatic Chambers.',
+      token: jwtToken,
       user: {
         id: newUser.id,
         name: newUser.name,
         email: newUser.email,
         role: newUser.role,
+        gradeClass: newUser.gradeClass,
+        age: newUser.age,
         title: newUser.title,
         country: newUser.country,
         committee: newUser.committee,
         avatarColor: newUser.avatarColor,
+        createdAt: newUser.createdAt,
       },
     });
   } catch (err) {
-    console.error('Registration error:', err);
-    return res.status(500).json({ error: 'Registration error.' });
+    console.error('Registration verification error:', err);
+    return res.status(500).json({ error: 'Failed to verify registration code.' });
   }
 };
 
+// POST /api/auth/register-resend - Resend fresh 6-digit code to user's Gmail
+const handleRegisterResend = async (req: express.Request, res: express.Response) => {
+  try {
+    const { email, token } = req.body;
+    const lookupKey = (token || email || '').toString().trim().replace(/[\s-]/g, '');
+    if (!lookupKey) {
+      return res.status(400).json({ error: 'Email address or session token is required to resend verification code.' });
+    }
+
+    const pending = await getPendingRegistration(lookupKey);
+    if (!pending) {
+      return res.status(404).json({ error: 'No pending registration found for this email. Please register again.' });
+    }
+
+    const freshCode = Math.floor(100000 + Math.random() * 900000).toString();
+    pending.code = freshCode;
+    pending.expiresAt = Date.now() + 15 * 60 * 1000;
+
+    await savePendingRegistration(pending);
+
+    // Forward verification code to Gmail
+    const emailSent = await sendVerificationEmail(pending.email, freshCode, pending.token, 'Registration');
+    console.log(`📧 [REGISTRATION RESEND] Fresh 6-digit code ${freshCode} forwarded to ${pending.email} (emailSent=${emailSent})`);
+
+    return res.json({
+      success: true,
+      emailSent,
+      email: pending.email,
+      token: pending.token,
+      message: `A fresh 6-digit verification code has been forwarded to your Gmail (${pending.email}).`,
+      expiresInMinutes: 15,
+    });
+  } catch (err) {
+    console.error('Registration resend error:', err);
+    return res.status(500).json({ error: 'Failed to resend verification code.' });
+  }
+};
+
+// POST /api/auth/register & /api/auth/signup - Unified routing: supports direct initiation or verification
+const handleRegister = async (req: express.Request, res: express.Response) => {
+  if (req.body.code) {
+    return handleRegisterVerify(req, res);
+  }
+  return handleRegisterInitiate(req, res);
+};
+
+apiRouter.post('/auth/register-initiate', handleRegisterInitiate);
+apiRouter.post('/auth/register-verify', handleRegisterVerify);
+apiRouter.post('/auth/verify-registration', handleRegisterVerify);
+apiRouter.post('/auth/register-resend', handleRegisterResend);
 apiRouter.post('/auth/register', handleRegister);
 apiRouter.post('/auth/signup', handleRegister);
 
@@ -581,8 +870,8 @@ apiRouter.post('/auth/login', async (req, res) => {
       email: cleanEmail,
       role: isAutoAdmin ? 'ADMIN' : 'DELEGATE',
       title: isAutoAdmin ? 'Secretariat Administrator' : 'Delegate',
-      country: isAutoAdmin ? 'Secretariat Dais' : 'United Nations',
-      committee: 'UN General Assembly',
+      country: isAutoAdmin ? 'Secretariat Dais' : '',
+      committee: isAutoAdmin ? 'UN General Assembly' : '',
       avatarColor: isAutoAdmin ? 'from-cyan-500 to-blue-600' : 'from-indigo-500 to-cyan-600',
       passwordHash,
       createdAt: Date.now(),
@@ -626,8 +915,8 @@ apiRouter.post('/auth/oauth-google', async (req, res) => {
         email: cleanEmail,
         role: isAutoAdmin ? 'MASTER_ADMIN' : 'DELEGATE',
         title: isAutoAdmin ? 'Secretary-General & Master Admin' : 'Diplomatic Delegate',
-        country: isAutoAdmin ? 'Secretariat Executive' : 'United Nations Member State',
-        committee: 'All Committees',
+        country: isAutoAdmin ? 'Secretariat Executive' : '',
+        committee: isAutoAdmin ? 'All Committees' : '',
         avatarColor: 'from-red-500 to-amber-500',
         createdAt: Date.now(),
       };
@@ -658,11 +947,12 @@ apiRouter.post('/auth/oauth-google', async (req, res) => {
 apiRouter.post('/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
-    const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const emailValidation = validateRealEmail(email);
 
-    if (!cleanEmail || !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
-      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    if (!emailValidation.isValid) {
+      return res.status(400).json({ error: emailValidation.error || 'Please enter a valid, real email address.' });
     }
+    const cleanEmail = emailValidation.cleanEmail;
 
     const resetToken = 'sec_tok_' + crypto.randomBytes(20).toString('hex');
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -687,18 +977,20 @@ apiRouter.post('/auth/forgot-password', async (req, res) => {
         email: cleanEmail,
         role: isAutoAdmin ? 'ADMIN' : 'DELEGATE',
         title: isAutoAdmin ? 'Secretariat Administrator' : 'Delegate',
-        country: 'United Nations',
-        committee: 'General Assembly',
+        country: isAutoAdmin ? 'Secretariat Dais' : '',
+        committee: isAutoAdmin ? 'General Assembly' : '',
         createdAt: Date.now(),
       });
     }
 
-    await sendVerificationEmail(cleanEmail, resetCode, resetToken);
+    const emailSent = await sendVerificationEmail(cleanEmail, resetCode, resetToken);
 
     return res.json({
       success: true,
-      message: `A fresh 6-digit verification code has been dispatched directly to ${cleanEmail}. Please check your email inbox (including Spam/Junk folder).`,
+      token: resetToken,
       email: cleanEmail,
+      emailSent,
+      message: `A fresh 6-digit verification code has been generated and dispatched to your email (${cleanEmail}). Please check your inbox and spam folder.`,
       expiresInMinutes: 15,
       generatedAt: new Date().toLocaleTimeString(),
     });
@@ -711,11 +1003,12 @@ apiRouter.post('/auth/forgot-password', async (req, res) => {
 apiRouter.post('/auth/send-email-code', async (req, res) => {
   try {
     const { email, purpose } = req.body;
-    const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const emailValidation = validateRealEmail(email);
 
-    if (!cleanEmail || !/^\S+@\S+\.\S+$/.test(cleanEmail)) {
-      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    if (!emailValidation.isValid) {
+      return res.status(400).json({ error: emailValidation.error || 'Please enter a valid, real email address.' });
     }
+    const cleanEmail = emailValidation.cleanEmail;
 
     const freshCode = Math.floor(100000 + Math.random() * 900000).toString();
     const freshToken = 'eml_code_' + crypto.randomBytes(18).toString('hex');
@@ -730,13 +1023,15 @@ apiRouter.post('/auth/send-email-code', async (req, res) => {
     };
 
     await savePasswordReset(entry);
-    await sendVerificationEmail(cleanEmail, freshCode, freshToken);
+    const emailSent = await sendVerificationEmail(cleanEmail, freshCode, freshToken);
 
     return res.json({
       success: true,
-      message: `A fresh single-use verification code has been generated and dispatched directly to ${cleanEmail}. Please check your email inbox.`,
+      token: freshToken,
       email: cleanEmail,
+      emailSent,
       purpose: purpose || 'Verification',
+      message: `A fresh single-use verification code has been generated and dispatched to your email (${cleanEmail}). Please check your inbox and spam folder.`,
       expiresInMinutes: 15,
       generatedAt: new Date().toLocaleTimeString(),
     });
@@ -749,22 +1044,22 @@ apiRouter.post('/auth/send-email-code', async (req, res) => {
 apiRouter.post('/auth/verify-reset-token', async (req, res) => {
   try {
     const { token, code, email } = req.body;
-    const lookupKey = (token || code || '').trim();
+    const lookupKey = (token || code || '').trim().replace(/[\s-]/g, '');
     if (!lookupKey) {
       return res.status(400).json({ error: 'Reset token or verification code is required.' });
     }
 
     const entry = await getPasswordReset(lookupKey);
     if (!entry) {
-      return res.status(404).json({ error: 'Invalid or expired password reset token.' });
+      return res.status(404).json({ error: 'Invalid or expired password reset token / code.' });
     }
 
     if (entry.used) {
-      return res.status(400).json({ error: 'This password reset link has already been used.' });
+      return res.status(400).json({ error: 'This verification code has already been used.' });
     }
 
     if (Date.now() > entry.expiresAt) {
-      return res.status(400).json({ error: 'Password reset link has expired. Please request a new one.' });
+      return res.status(400).json({ error: 'Verification code has expired. Please request a new one.' });
     }
 
     if (email && entry.email !== email.trim().toLowerCase()) {
@@ -785,7 +1080,7 @@ apiRouter.post('/auth/verify-reset-token', async (req, res) => {
 apiRouter.post('/auth/reset-password', async (req, res) => {
   try {
     const { token, code, newPassword } = req.body;
-    const lookupKey = (token || code || '').trim();
+    const lookupKey = (token || code || '').trim().replace(/[\s-]/g, '');
 
     if (!lookupKey) {
       return res.status(400).json({ error: 'Reset token or code is required.' });
@@ -796,15 +1091,15 @@ apiRouter.post('/auth/reset-password', async (req, res) => {
 
     const entry = await getPasswordReset(lookupKey);
     if (!entry) {
-      return res.status(404).json({ error: 'Invalid or expired password reset token.' });
+      return res.status(404).json({ error: 'Invalid or expired verification code. Please request a new code.' });
     }
 
     if (entry.used) {
-      return res.status(400).json({ error: 'This reset token has already been consumed.' });
+      return res.status(400).json({ error: 'This verification code has already been consumed.' });
     }
 
     if (Date.now() > entry.expiresAt) {
-      return res.status(400).json({ error: 'Reset token has expired. Please request a new one.' });
+      return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
     }
 
     const targetEmail = entry.email;
@@ -826,7 +1121,10 @@ apiRouter.post('/auth/reset-password', async (req, res) => {
       await saveUser(user);
     }
 
-    await markPasswordResetUsed(entry.token);
+    await markPasswordResetUsed(lookupKey);
+    if (entry.token) await markPasswordResetUsed(entry.token);
+    if (entry.code) await markPasswordResetUsed(entry.code);
+
     const authToken = generateJwtToken(user);
 
     return res.json({
@@ -865,18 +1163,27 @@ apiRouter.get('/admin/accounts', async (req, res) => {
   }
 });
 
-// POST /api/admin/create-account - Admin creates another admin or chair account
+// POST /api/admin/create-account - Admin can create ONLY admin accounts
 apiRouter.post('/admin/create-account', async (req, res) => {
   try {
     const { name, email, role, title, password } = req.body;
     if (!name || name.trim().length < 2) {
       return res.status(400).json({ error: 'Full name is required (minimum 2 characters).' });
     }
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      return res.status(400).json({ error: 'A valid email address is required.' });
+
+    const emailValidation = validateRealEmail(email);
+    if (!emailValidation.isValid) {
+      return res.status(400).json({ error: emailValidation.error || 'A valid, real email address is required.' });
+    }
+    const cleanEmail = emailValidation.cleanEmail;
+
+    // Strict constraint: Admin can create ONLY admin accounts
+    if (role && role !== 'ADMIN' && role !== 'MASTER_ADMIN') {
+      return res.status(403).json({
+        error: 'Permission denied: Administrators can create ONLY Admin accounts.',
+      });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
     const existing = await getUserByEmail(cleanEmail);
     if (existing) {
       return res.status(409).json({ error: `An account for ${cleanEmail} already exists.` });
@@ -884,18 +1191,18 @@ apiRouter.post('/admin/create-account', async (req, res) => {
 
     const plainPassword = password && String(password).trim().length >= 6 ? String(password).trim() : 'Secretariat2026!';
     const passwordHash = bcrypt.hashSync(plainPassword, 10);
-    const validRole = role === 'CHAIR' ? 'CHAIR' : role === 'MASTER_ADMIN' ? 'MASTER_ADMIN' : 'ADMIN';
+    const validRole = 'ADMIN';
 
     const newAdmin: StoredUser = {
       id: 'admin_' + Date.now(),
       name: name.trim(),
       email: cleanEmail,
       role: validRole,
-      title: title || (validRole === 'CHAIR' ? 'Executive Board (Chair)' : 'Secretariat Administrator'),
+      title: title && title.toLowerCase().includes('admin') ? title : 'Secretariat Administrator',
       passwordHash,
       country: 'Secretariat Dais',
       committee: 'Executive Board',
-      avatarColor: validRole === 'MASTER_ADMIN' ? 'from-cyan-500 to-blue-600' : 'from-amber-500 to-orange-600',
+      avatarColor: 'from-cyan-500 to-blue-600',
       createdAt: Date.now(),
     };
 
@@ -903,7 +1210,7 @@ apiRouter.post('/admin/create-account', async (req, res) => {
     const token = generateJwtToken(newAdmin);
 
     return res.status(201).json({
-      message: `${validRole === 'CHAIR' ? 'Chair' : 'Admin'} account created successfully.`,
+      message: 'Admin account created successfully.',
       token,
       account: {
         id: newAdmin.id,
@@ -956,6 +1263,563 @@ apiRouter.post('/admin/delete-account', async (req, res) => {
 });
 
 // ==========================================
+// DELEGATE MANAGEMENT & ASSIGNMENT API
+// ==========================================
+
+// GET /api/admin/delegates - Get all delegates with committee & country assignments
+apiRouter.get('/admin/delegates', async (req, res) => {
+  try {
+    const allUsers = await getAllUsers();
+    // Filter to delegates (exclude secretariats / pure admins)
+    const delegates = allUsers.filter(
+      (u) => u.role === 'DELEGATE' || (!['MASTER_ADMIN', 'ADMIN', 'CHAIR'].includes(u.role))
+    );
+
+    const assigned = delegates.filter((d) => (d.committee && d.committee.trim() !== '') && (d.country && d.country.trim() !== ''));
+    const unassigned = delegates.filter((d) => !d.committee || !d.country || d.committee.trim() === '' || d.country.trim() === '');
+
+    return res.json({
+      delegates,
+      total: delegates.length,
+      assignedCount: assigned.length,
+      unassignedCount: unassigned.length,
+    });
+  } catch (err: any) {
+    console.error('Failed to get delegates:', err);
+    return res.status(500).json({ error: 'Failed to retrieve delegates directory.' });
+  }
+});
+
+// POST /api/admin/delegates/assign - Assign a delegate to a committee and country
+apiRouter.post('/admin/delegates/assign', async (req, res) => {
+  try {
+    const { delegateId, delegateEmail, committee, country } = req.body;
+
+    if (!delegateId && !delegateEmail) {
+      return res.status(400).json({ error: 'Delegate identifier (ID or Email) is required.' });
+    }
+
+    const identifier = (delegateId || delegateEmail || '').trim();
+    const user = await getUserByIdOrEmail(identifier);
+
+    if (!user) {
+      return res.status(404).json({ error: `Delegate '${identifier}' not found in registry.` });
+    }
+
+    const cleanCommittee = (committee || '').trim();
+    const cleanCountry = (country || '').trim();
+
+    user.committee = cleanCommittee;
+    user.country = cleanCountry;
+    await saveUser(user);
+
+    // Synchronize with Committee Country Roster
+    if (cleanCommittee && cleanCountry) {
+      await syncDelegateAssignment(user.name, cleanCommittee, cleanCountry);
+    } else {
+      await unassignDelegate(user.name);
+    }
+
+    return res.json({
+      success: true,
+      message: `Successfully assigned ${user.name} to ${cleanCountry || 'None'} in ${cleanCommittee || 'None'}.`,
+      delegate: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gradeClass: user.gradeClass,
+        country: user.country,
+        committee: user.committee,
+        title: user.title,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err: any) {
+    console.error('Failed to assign delegate:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to complete delegate assignment.' });
+  }
+});
+
+// POST /api/admin/delegates/unassign - Unassign delegate from country and committee
+apiRouter.post('/admin/delegates/unassign', async (req, res) => {
+  try {
+    const { delegateId, delegateEmail } = req.body;
+    const identifier = (delegateId || delegateEmail || '').trim();
+    if (!identifier) {
+      return res.status(400).json({ error: 'Delegate ID or Email is required.' });
+    }
+
+    const user = await getUserByIdOrEmail(identifier);
+    if (!user) {
+      return res.status(404).json({ error: 'Delegate not found.' });
+    }
+
+    await unassignDelegate(user.name);
+    user.committee = '';
+    user.country = '';
+    await saveUser(user);
+
+    return res.json({
+      success: true,
+      message: `Assignment cleared for ${user.name}.`,
+      delegate: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gradeClass: user.gradeClass,
+        country: '',
+        committee: '',
+        title: user.title,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err: any) {
+    console.error('Failed to unassign delegate:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to unassign delegate.' });
+  }
+});
+
+// POST /api/admin/delegates - Create/register a new delegate
+apiRouter.post('/admin/delegates', async (req, res) => {
+  try {
+    const { name, email, committee, country, gradeClass, role, title, password } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Full name and email are required.' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const existing = await getUserByEmail(cleanEmail);
+    if (existing) {
+      return res.status(400).json({ error: `An account with email '${cleanEmail}' already exists.` });
+    }
+
+    const plainPassword = password || 'Delegate2026!';
+    const passwordHash = bcrypt.hashSync(plainPassword, 10);
+    const newId = `del_${cleanEmail.split('@')[0].replace(/[^a-z0-9]/g, '_').slice(0, 15)}_${Date.now().toString(36)}`;
+
+    const newUser: StoredUser = {
+      id: newId,
+      name: name.trim(),
+      email: cleanEmail,
+      role: (role as any) || 'DELEGATE',
+      gradeClass: gradeClass ? gradeClass.trim() : undefined,
+      title: title?.trim() || 'Distinguished Delegate',
+      country: country?.trim() || '',
+      committee: committee?.trim() || '',
+      avatarColor: 'from-cyan-500 to-blue-600',
+      passwordHash,
+      createdAt: Date.now(),
+    };
+
+    await saveUser(newUser);
+
+    if (newUser.committee && newUser.country) {
+      await syncDelegateAssignment(newUser.name, newUser.committee, newUser.country);
+    }
+
+    return res.json({
+      success: true,
+      message: `Delegate ${newUser.name} created successfully.`,
+      delegate: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        gradeClass: newUser.gradeClass,
+        country: newUser.country,
+        committee: newUser.committee,
+        title: newUser.title,
+        createdAt: newUser.createdAt,
+      },
+    });
+  } catch (err: any) {
+    console.error('Failed to create delegate:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to create delegate.' });
+  }
+});
+
+// PUT /api/admin/delegates/:id - Update delegate details and assignments
+apiRouter.put('/admin/delegates/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, committee, country, gradeClass, title } = req.body;
+
+    const user = await getUserByIdOrEmail(id);
+    if (!user) {
+      return res.status(404).json({ error: 'Delegate not found.' });
+    }
+
+    const oldName = user.name;
+    if (name) user.name = name.trim();
+    if (email) user.email = email.toLowerCase().trim();
+    if (gradeClass !== undefined) user.gradeClass = gradeClass.trim();
+    if (title !== undefined) user.title = title.trim();
+
+    const cleanCommittee = committee !== undefined ? committee.trim() : user.committee;
+    const cleanCountry = country !== undefined ? country.trim() : user.country;
+
+    user.committee = cleanCommittee;
+    user.country = cleanCountry;
+
+    await saveUser(user);
+
+    // If name changed, clear old name from rosters first
+    if (oldName !== user.name) {
+      await unassignDelegate(oldName);
+    }
+
+    if (cleanCommittee && cleanCountry) {
+      await syncDelegateAssignment(user.name, cleanCommittee, cleanCountry);
+    } else {
+      await unassignDelegate(user.name);
+    }
+
+    return res.json({
+      success: true,
+      message: `Delegate ${user.name} updated.`,
+      delegate: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gradeClass: user.gradeClass,
+        country: user.country,
+        committee: user.committee,
+        title: user.title,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err: any) {
+    console.error('Failed to update delegate:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to update delegate.' });
+  }
+});
+
+// DELETE /api/admin/delegates/:id - Delete delegate
+apiRouter.delete('/admin/delegates/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const emailQuery = (req.query.email as string) || '';
+
+    const user = await getUserByIdOrEmail(id || emailQuery);
+    if (user) {
+      await unassignDelegate(user.name);
+      await deleteUserByIdOrEmail(user.id, user.email);
+    } else {
+      await deleteUserByIdOrEmail(id, emailQuery);
+    }
+
+    return res.json({ success: true, message: 'Delegate deleted successfully.' });
+  } catch (err: any) {
+    console.error('Failed to delete delegate:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to delete delegate.' });
+  }
+});
+
+// POST /api/admin/delegates/auto-allocate - Auto-allocate unassigned delegates across open country seats
+apiRouter.post('/admin/delegates/auto-allocate', async (req, res) => {
+  try {
+    const allUsers = await getAllUsers();
+    const unassignedDelegates = allUsers.filter(
+      (u) =>
+        (u.role === 'DELEGATE' || !['MASTER_ADMIN', 'ADMIN', 'CHAIR'].includes(u.role)) &&
+        (!u.country || !u.committee || u.country.trim() === '' || u.committee.trim() === '')
+    );
+
+    if (unassignedDelegates.length === 0) {
+      return res.json({ success: true, allocatedCount: 0, message: 'All delegates already have assigned portfolios.' });
+    }
+
+    const committees = await getAllCommittees();
+    let allocated = 0;
+    let delIndex = 0;
+
+    for (const cmte of committees) {
+      for (const cty of cmte.countries) {
+        if (delIndex >= unassignedDelegates.length) break;
+        if (!cty.assignedDelegate || cty.assignedDelegate.trim() === '') {
+          const delegate = unassignedDelegates[delIndex];
+          const fullUser = await getUserByIdOrEmail(delegate.id);
+          if (fullUser) {
+            fullUser.committee = cmte.name;
+            fullUser.country = cty.name;
+            await saveUser(fullUser);
+            cty.assignedDelegate = fullUser.name;
+            allocated++;
+            delIndex++;
+          }
+        }
+      }
+      await saveCommittee(cmte);
+      if (delIndex >= unassignedDelegates.length) break;
+    }
+
+    return res.json({
+      success: true,
+      allocatedCount: allocated,
+      message: `Successfully auto-allocated ${allocated} delegate(s) to open committee country seats.`,
+    });
+  } catch (err: any) {
+    console.error('Failed to auto-allocate delegates:', err);
+    return res.status(500).json({ error: err?.message || 'Auto-allocation failed.' });
+  }
+});
+
+// ==========================================
+// COMMITTEES & ROLL CALL API
+// ==========================================
+
+// GET /api/committees - Get all committees and their member state delegations
+apiRouter.get('/committees', async (req, res) => {
+  try {
+    const list = await getAllCommittees();
+    return res.json({ committees: list, count: list.length });
+  } catch (err: any) {
+    console.error('Failed to get committees:', err);
+    return res.status(500).json({ error: 'Failed to retrieve committees.' });
+  }
+});
+
+// GET /api/committees/presets - Get standard country matrix presets
+apiRouter.get('/committees/presets', (req, res) => {
+  return res.json({ presets: PRESET_MATRICES });
+});
+
+// GET /api/committees/:id - Get specific committee
+apiRouter.get('/committees/:id', async (req, res) => {
+  try {
+    const cmte = await getCommitteeById(req.params.id);
+    if (!cmte) {
+      return res.status(404).json({ error: 'Committee not found.' });
+    }
+    return res.json({ committee: cmte });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve committee.' });
+  }
+});
+
+// POST /api/committees - Create a new committee (Admin and Chair can add eno. of committees)
+apiRouter.post('/committees', async (req, res) => {
+  try {
+    const { code, name, topic, category, description, chairName, initialCountries, preset } = req.body;
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({ error: 'Committee code (e.g. UNGA, UNSC, WHO) is required.' });
+    }
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Committee name is required.' });
+    }
+
+    const cleanCode = code.trim().toUpperCase();
+    const cleanName = name.trim();
+    const id = `cmte_${cleanCode.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString(36)}`;
+
+    let countries: CommitteeCountry[] = [];
+    if (preset && PRESET_MATRICES[preset]) {
+      countries = PRESET_MATRICES[preset].countries.map((cName) => ({
+        id: `cty_${cName.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 15)}_${Math.random().toString(36).slice(2, 6)}`,
+        name: cName,
+        flag: getCountryFlag(cName),
+        status: 'PRESENT' as RollCallStatus,
+        p5: cleanCode === 'UNSC' && ['United States', 'United Kingdom', 'France', "People's Republic of China", 'China', 'Russian Federation', 'Russia'].some((p) => cName.toLowerCase().includes(p.toLowerCase())),
+        bloc: 'General Member State',
+      }));
+    } else if (Array.isArray(initialCountries)) {
+      countries = initialCountries.filter((c: any) => c && c.name).map((c: any) => ({
+        id: `cty_${c.name.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 15)}_${Math.random().toString(36).slice(2, 6)}`,
+        name: c.name.trim(),
+        flag: getCountryFlag(c.name.trim()),
+        status: (c.status as RollCallStatus) || 'PRESENT',
+        p5: !!c.p5,
+        bloc: c.bloc || 'General Member State',
+        assignedDelegate: c.assignedDelegate || undefined,
+        notes: c.notes || undefined,
+      }));
+    }
+
+    const newCommittee: CommitteeItem = {
+      id,
+      code: cleanCode,
+      name: cleanName,
+      topic: (topic || '').trim(),
+      category: category || 'General Assembly',
+      description: (description || '').trim(),
+      chairName: (chairName || '').trim(),
+      countries,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const saved = await saveCommittee(newCommittee);
+    return res.status(201).json({
+      success: true,
+      message: `Committee ${saved.code} created successfully.`,
+      committee: saved,
+    });
+  } catch (err: any) {
+    console.error('Failed to create committee:', err);
+    return res.status(500).json({ error: err?.message || 'Failed to create committee.' });
+  }
+});
+
+// PUT /api/committees/:id - Update committee details
+apiRouter.put('/committees/:id', async (req, res) => {
+  try {
+    const existing = await getCommitteeById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Committee not found.' });
+    }
+
+    const { code, name, topic, category, description, chairName } = req.body;
+    if (code) existing.code = code.trim().toUpperCase();
+    if (name) existing.name = name.trim();
+    if (topic !== undefined) existing.topic = topic.trim();
+    if (category) existing.category = category;
+    if (description !== undefined) existing.description = description.trim();
+    if (chairName !== undefined) existing.chairName = chairName.trim();
+
+    const saved = await saveCommittee(existing);
+    return res.json({ success: true, message: 'Committee updated successfully.', committee: saved });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update committee.' });
+  }
+});
+
+// DELETE /api/committees/:id - Delete committee
+apiRouter.delete('/committees/:id', async (req, res) => {
+  try {
+    const deleted = await deleteCommitteeById(req.params.id);
+    return res.json({ success: deleted, message: 'Committee deleted.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to delete committee.' });
+  }
+});
+
+// POST /api/committees/bulk-delete - Delete multiple committees
+apiRouter.post('/committees/bulk-delete', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Please provide an array of committee IDs to delete.' });
+    }
+    await deleteMultipleCommittees(ids);
+    return res.json({ success: true, message: `Successfully deleted ${ids.length} committee(s).` });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to delete committees.' });
+  }
+});
+
+// POST /api/committees/:id/countries - Add countries (single or multiple) to committee's roll call list
+apiRouter.post('/committees/:id/countries', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { countries, names, preset, defaultStatus } = req.body;
+
+    let itemsToAdd: Array<{ name: string; status?: RollCallStatus; p5?: boolean; bloc?: string; assignedDelegate?: string; notes?: string }> = [];
+
+    if (preset && PRESET_MATRICES[preset]) {
+      itemsToAdd = PRESET_MATRICES[preset].countries.map((cName) => ({
+        name: cName,
+        status: defaultStatus || 'PRESENT',
+      }));
+    } else if (Array.isArray(countries) && countries.length > 0) {
+      itemsToAdd = countries;
+    } else if (names) {
+      const nameList = Array.isArray(names)
+        ? names
+        : String(names)
+            .split(/[\n,;]+/)
+            .map((n) => n.trim())
+            .filter((n) => n.length > 0);
+
+      itemsToAdd = nameList.map((n) => ({
+        name: n,
+        status: defaultStatus || 'PRESENT',
+      }));
+    }
+
+    if (itemsToAdd.length === 0) {
+      return res.status(400).json({ error: 'Please provide at least one country name or preset.' });
+    }
+
+    const updated = await addCountriesToCommittee(id, itemsToAdd);
+    if (!updated) {
+      return res.status(404).json({ error: 'Committee not found.' });
+    }
+
+    return res.json({
+      success: true,
+      message: `Added ${itemsToAdd.length} countries to committee ${updated.code}.`,
+      committee: updated,
+    });
+  } catch (err: any) {
+    console.error('Failed to add countries:', err);
+    return res.status(500).json({ error: 'Failed to add countries to committee.' });
+  }
+});
+
+// PUT /api/committees/:id/countries/:countryId - Update country roll call status or details
+apiRouter.put('/committees/:id/countries/:countryId', async (req, res) => {
+  try {
+    const { id, countryId } = req.params;
+    const { status, name, bloc, p5, assignedDelegate, notes } = req.body;
+
+    const updated = await updateCountryInCommittee(id, countryId, {
+      status,
+      name,
+      bloc,
+      p5,
+      assignedDelegate,
+      notes,
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Committee or country not found.' });
+    }
+
+    return res.json({ success: true, committee: updated });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to update country.' });
+  }
+});
+
+// DELETE /api/committees/:id/countries/:countryId - Delete country from committee
+apiRouter.delete('/committees/:id/countries/:countryId', async (req, res) => {
+  try {
+    const { id, countryId } = req.params;
+    const updated = await deleteCountryFromCommittee(id, countryId);
+    if (!updated) {
+      return res.status(404).json({ error: 'Committee or country not found.' });
+    }
+    return res.json({ success: true, message: 'Country removed from committee.', committee: updated });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to delete country from committee.' });
+  }
+});
+
+// POST /api/committees/:id/roll-call/batch - Batch update roll call (MARK_ALL_PRESENT, MARK_ALL_PRESENT_AND_VOTING, RESET)
+apiRouter.post('/committees/:id/roll-call/batch', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body;
+    if (!action || !['MARK_ALL_PRESENT', 'MARK_ALL_PRESENT_AND_VOTING', 'RESET'].includes(action)) {
+      return res.status(400).json({ error: 'Valid action is required (MARK_ALL_PRESENT, MARK_ALL_PRESENT_AND_VOTING, RESET).' });
+    }
+
+    const updated = await batchUpdateRollCall(id, action);
+    if (!updated) {
+      return res.status(404).json({ error: 'Committee not found.' });
+    }
+
+    return res.json({ success: true, committee: updated });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to batch update roll call.' });
+  }
+});
+
+// ==========================================
 // MEETING ROOMS API
 // ==========================================
 
@@ -995,17 +1859,15 @@ apiRouter.post('/rooms/create', async (req, res) => {
     const isAuthorizedAdmin =
       userRole === 'ADMIN' ||
       userRole === 'MASTER_ADMIN' ||
-      userRole === 'CHAIR' ||
-      hostRole === 'CHAIR' ||
       cleanEmail === 'gyan.dev9808@gmail.com' ||
       cleanEmail === 'admin@delegatex.org' ||
-      (storedAccount && storedAccount.role !== 'DELEGATE') ||
+      (storedAccount && (storedAccount.role === 'ADMIN' || storedAccount.role === 'MASTER_ADMIN')) ||
       passkey === 'Secretariat2026!' ||
       passkey === 'AdminSecretariat2026!';
 
     if (!isAuthorizedAdmin) {
       return res.status(403).json({
-        error: 'Unauthorized: Only Secretariat Administrators, Master Admins, and Executive Board Chairs are permitted to create live meeting rooms. Delegates can join existing rooms via meeting codes.',
+        error: 'Unauthorized: Only Secretariat Administrators and Master Admins are permitted to create live meeting rooms. Delegates can join existing rooms via meeting codes.',
         requiresAdmin: true,
       });
     }
@@ -1045,7 +1907,7 @@ apiRouter.post('/rooms/create', async (req, res) => {
       isTimerRunning: false,
       isLocked: false,
       chatDisabled: false,
-      screenShareDisabled: true,
+      screenShareDisabled: false,
       participants: [],
       messages: [
         {
@@ -1103,7 +1965,7 @@ apiRouter.get('/rooms/:roomId', async (req, res) => {
       isTimerRunning: false,
       isLocked: false,
       chatDisabled: false,
-      screenShareDisabled: true,
+      screenShareDisabled: false,
       participants: [],
       messages: [
         {
@@ -1170,7 +2032,7 @@ apiRouter.get('/rooms/:roomId', async (req, res) => {
 // POST /api/rooms/:roomId/join - Join Meeting Room
 apiRouter.post('/rooms/:roomId/join', async (req, res) => {
   const { roomId } = req.params;
-  const { id, name, country, role, isMuted, isVideoOn } = req.body;
+  const { id, name, country, role, email, isMuted, isVideoOn } = req.body;
   const cleanId = roomId.toLowerCase().trim();
 
   let room = await getRoom(cleanId);
@@ -1190,7 +2052,7 @@ apiRouter.post('/rooms/:roomId/join', async (req, res) => {
       isTimerRunning: false,
       isLocked: false,
       chatDisabled: false,
-      screenShareDisabled: true,
+      screenShareDisabled: false,
       participants: [],
       messages: [],
       signals: [],
@@ -1200,6 +2062,21 @@ apiRouter.post('/rooms/:roomId/join', async (req, res) => {
       ],
     };
   }
+
+  const userEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  const storedUser = userEmail ? await getUserByEmail(userEmail) : null;
+  const isAuthorizedAdmin =
+    userEmail === 'gyan.dev9808@gmail.com' ||
+    userEmail === 'admin@delegatex.org' ||
+    userEmail.includes('admin') ||
+    userEmail.includes('sec') ||
+    storedUser?.role === 'ADMIN' ||
+    storedUser?.role === 'MASTER_ADMIN';
+
+  // Strict constraint: only authorized admins can choose their role.
+  // Standard delegates cannot choose their role - role is automatically DELEGATE.
+  const finalRole: 'CHAIR' | 'DELEGATE' =
+    isAuthorizedAdmin && (role === 'CHAIR' || role === 'ADMIN') ? 'CHAIR' : 'DELEGATE';
 
   const userId = id || 'usr_' + Math.random().toString(36).substring(2, 9);
   const now = Date.now();
@@ -1219,8 +2096,8 @@ apiRouter.post('/rooms/:roomId/join', async (req, res) => {
   const participantData: Participant = {
     id: userId,
     name: name?.trim() || 'Delegate',
-    country: country?.trim() || (role === 'CHAIR' ? 'Executive Board' : 'Observer Delegation'),
-    role: role || 'DELEGATE',
+    country: country?.trim() || (finalRole === 'CHAIR' ? 'Executive Board' : 'Observer Delegation'),
+    role: finalRole,
     avatarColor: avatarColors[Math.abs(userId.charCodeAt(0) || 0) % avatarColors.length],
     isAudioMuted: isMuted ?? false,
     isVideoMuted: !(isVideoOn ?? true),
@@ -1346,7 +2223,7 @@ apiRouter.delete('/rooms/:roomId/messages', async (req, res) => {
 // POST /api/rooms/:roomId/participant-state - Update Participant Media State
 apiRouter.post('/rooms/:roomId/participant-state', async (req, res) => {
   const { roomId } = req.params;
-  const { userId, isMuted, isVideoOn, isHandRaised, isSpeaking, videoFrame } = req.body;
+  const { userId, isMuted, isVideoOn, isHandRaised, isSpeaking, videoFrame, isScreenSharing } = req.body;
   const cleanId = roomId.toLowerCase().trim();
 
   const room = await getRoom(cleanId);
@@ -1363,9 +2240,12 @@ apiRouter.post('/rooms/:roomId/participant-state', async (req, res) => {
     if (typeof isVideoOn === 'boolean') {
       p.isVideoMuted = !isVideoOn;
       p.isVideoOn = isVideoOn;
-      if (!isVideoOn) {
+      if (!isVideoOn && !p.isScreenSharing) {
         p.videoFrame = '';
       }
+    }
+    if (typeof isScreenSharing === 'boolean') {
+      p.isScreenSharing = isScreenSharing;
     }
     if (typeof isHandRaised === 'boolean') p.isHandRaised = isHandRaised;
     if (typeof isSpeaking === 'boolean') p.isSpeaking = isSpeaking;

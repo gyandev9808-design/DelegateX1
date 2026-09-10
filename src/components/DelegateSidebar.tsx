@@ -228,7 +228,14 @@ export default function DelegateSidebar({ isOpen, onClose }: DelegateSidebarProp
         </div>
 
         {/* User Account & Sign Out Footer */}
-        <div className="p-4 border-t border-white/10 bg-slate-950/60">
+        <div className="p-4 border-t border-white/10 bg-slate-950/60 space-y-2">
+          {user?.country && (
+            <div className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-[11px] font-semibold text-cyan-300 flex items-center justify-between">
+              <span className="truncate">🌐 {user.country}</span>
+              {user.committee && <span className="text-[10px] text-slate-400 font-mono truncate max-w-[90px]">{user.committee}</span>}
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/5 border border-white/5">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 text-xs font-black text-white">

@@ -90,7 +90,7 @@ export default function HomePage() {
             {/* Top pill badge */}
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-1.5 text-xs font-semibold text-cyan-300 shadow-lg shadow-cyan-500/10 backdrop-blur-md">
               <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Next-Generation MUN Training & Floor Simulation</span>
+              <span>Next Generation MUN organising company and MUN Training &amp; Floor Simulation</span>
             </div>
 
             <h1 className="mt-8 text-4xl font-extrabold tracking-tight text-white sm:text-6xl sm:leading-[1.15]">

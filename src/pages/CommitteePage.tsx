@@ -16,6 +16,7 @@ import {
   Clock,
   CheckCircle,
   Video,
+  Calendar,
 } from 'lucide-react';
 
 export default function CommitteePage() {
@@ -114,6 +115,14 @@ export default function CommitteePage() {
         </div>
 
         <div className="flex items-center space-x-3">
+          <Link
+            to="/admin/roll-call"
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-700 text-slate-200 hover:bg-slate-800 transition"
+          >
+            <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Roll Call Roster</span>
+          </Link>
+
           <Link
             to="/meet/unsc-arkt-2026"
             className="flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-cyan-300 text-slate-950 hover:bg-cyan-200 transition shadow-lg shadow-cyan-500/20"

@@ -5,6 +5,8 @@ interface RegisterData {
   name: string;
   email: string;
   password: string;
+  gradeClass?: string;
+  age?: number;
   role?: 'MASTER_ADMIN' | 'ADMIN' | 'CHAIR' | 'DELEGATE';
   title?: string;
   country?: string;
@@ -21,12 +23,35 @@ interface AuthContextType {
   isChair: boolean;
   isMasterAdmin: boolean;
   login: (email: string, password?: string) => Promise<{ success: boolean; error?: string; user?: User }>;
-  register: (data: RegisterData) => Promise<{ success: boolean; error?: string; user?: User }>;
+  register: (data: RegisterData) => Promise<{
+    success: boolean;
+    error?: string;
+    user?: User;
+    requiresVerification?: boolean;
+    email?: string;
+    token?: string;
+    emailSent?: boolean;
+    message?: string;
+  }>;
+  verifyRegistrationCode: (params: { email: string; code: string; token?: string }) => Promise<{
+    success: boolean;
+    error?: string;
+    user?: User;
+    message?: string;
+  }>;
+  resendRegistrationCode: (params: { email: string; token?: string }) => Promise<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    emailSent?: boolean;
+  }>;
   oauthGoogle: (email?: string, name?: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   sendEmailCode: (email: string, purpose?: string) => Promise<{
     success: boolean;
     error?: string;
     message?: string;
+    code?: string;
+    token?: string;
     email?: string;
     generatedAt?: string;
   }>;
@@ -34,6 +59,8 @@ interface AuthContextType {
     success: boolean;
     error?: string;
     message?: string;
+    code?: string;
+    token?: string;
     email?: string;
     generatedAt?: string;
   }>;
@@ -119,8 +146,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 email: cleanEmail,
                 role: resolvedRole,
                 title: resolvedRole === 'MASTER_ADMIN' ? 'Secretary-General' : resolvedRole === 'ADMIN' ? 'Secretariat Administrator' : 'Distinguished Delegate',
-                country: 'United Nations',
-                committee: 'UN General Assembly',
+                country: isAdminEmail ? 'Secretariat Executive' : '',
+                committee: isAdminEmail ? 'UN General Assembly' : '',
               });
             } else {
               setUser(null);
@@ -141,8 +168,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               email: cleanEmail,
               role: resolvedRole,
               title: resolvedRole === 'MASTER_ADMIN' ? 'Secretary-General' : resolvedRole === 'ADMIN' ? 'Secretariat Administrator' : 'Distinguished Delegate',
-              country: 'United Nations',
-              committee: 'UN General Assembly',
+              country: isAdminEmail ? 'Secretariat Executive' : '',
+              committee: isAdminEmail ? 'UN General Assembly' : '',
             });
           } else {
             localStorage.removeItem('mun_jwt_token');
@@ -161,6 +188,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(null);
       setIsLoading(false);
     }
+
+    // Listen for admin assignment events across tabs & components
+    const handleAssignmentUpdate = () => {
+      const currentToken = localStorage.getItem('mun_jwt_token');
+      if (currentToken) {
+        fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${currentToken}` },
+        })
+          .then((res) => parseResponseSafely(res))
+          .then(({ ok, data }) => {
+            if (ok && data.user) {
+              setUser(data.user);
+            }
+          })
+          .catch(() => {});
+      }
+    };
+
+    window.addEventListener('mun_assignments_updated', handleAssignmentUpdate);
+    window.addEventListener('storage', handleAssignmentUpdate);
+
+    return () => {
+      window.removeEventListener('mun_assignments_updated', handleAssignmentUpdate);
+      window.removeEventListener('storage', handleAssignmentUpdate);
+    };
   }, []);
 
   const saveAuthSession = (authToken: string, authUser: User) => {
@@ -205,8 +257,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: cleanEmail,
         role: resolvedRole,
         title: resolvedTitle,
-        country: 'United Nations',
-        committee: 'UN Security Council (UNSC)',
+        country: isAdminEmail ? 'Secretariat Executive' : '',
+        committee: isAdminEmail ? 'UN Security Council (UNSC)' : '',
       };
       const fallbackToken = 'jwt_live_' + Date.now();
       saveAuthSession(fallbackToken, fallbackUser);
@@ -223,8 +275,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: cleanEmail,
         role: resolvedRole,
         title: resolvedTitle,
-        country: 'United Nations',
-        committee: 'UN Security Council (UNSC)',
+        country: isAdminEmail ? 'Secretariat Executive' : '',
+        committee: isAdminEmail ? 'UN Security Council (UNSC)' : '',
       };
       const fallbackToken = 'jwt_live_' + Date.now();
       saveAuthSession(fallbackToken, fallbackUser);
@@ -234,27 +286,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (data: RegisterData) => {
     const cleanEmail = data.email.trim().toLowerCase();
-    const isAdminEmail = cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin') || data.role === 'ADMIN';
 
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch('/api/auth/register-initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       const { ok, data: resData, isHtml } = await parseResponseSafely(res);
 
+      if (ok && resData.requiresVerification) {
+        return {
+          success: true,
+          requiresVerification: true,
+          email: resData.email || cleanEmail,
+          token: resData.token,
+          emailSent: resData.emailSent,
+          message: resData.message,
+        };
+      }
+
       if (ok && resData.token && resData.user) {
         saveAuthSession(resData.token, resData.user);
         return { success: true, user: resData.user };
       }
 
-      // If account already exists on server, attempt seamless login
+      // If account already exists on server
       if (!isHtml && resData.error && resData.error.includes('already exists')) {
-        const loginAttempt = await login(data.email, data.password);
-        if (loginAttempt.success) {
-          return loginAttempt;
-        }
         return { success: false, error: 'An account with this email already exists. Please sign in with your password.' };
       }
 
@@ -262,35 +320,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: resData.error };
       }
 
-      // Fallback local registration for Vercel static deployments
-      const assignedRole = data.role || (cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : isAdminEmail ? 'ADMIN' : 'DELEGATE');
-      const localUser: User = {
-        id: 'usr_' + Date.now(),
-        name: data.name.trim(),
-        email: cleanEmail,
-        role: assignedRole,
-        title: data.title || (assignedRole === 'MASTER_ADMIN' ? 'Secretary-General' : assignedRole === 'ADMIN' ? 'Secretariat Administrator' : 'Distinguished Delegate'),
-        country: data.country || 'United States',
-        committee: data.committee || 'UN Security Council (UNSC)',
-      };
-      const localToken = 'jwt_reg_' + Date.now();
-      saveAuthSession(localToken, localUser);
-      return { success: true, user: localUser };
-    } catch {
-      // Resilient fallback on network glitch so registration always works on Vercel
-      const assignedRole = data.role || (cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : isAdminEmail ? 'ADMIN' : 'DELEGATE');
-      const localUser: User = {
-        id: 'usr_' + Date.now(),
-        name: data.name.trim(),
-        email: cleanEmail,
-        role: assignedRole,
-        title: data.title || (assignedRole === 'MASTER_ADMIN' ? 'Secretary-General' : assignedRole === 'ADMIN' ? 'Secretariat Administrator' : 'Distinguished Delegate'),
-        country: data.country || 'United States',
-        committee: data.committee || 'UN Security Council (UNSC)',
-      };
-      const localToken = 'jwt_reg_' + Date.now();
-      saveAuthSession(localToken, localUser);
-      return { success: true, user: localUser };
+      return { success: false, error: 'Failed to initiate registration. Please check your details.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error during registration initiation.' };
+    }
+  };
+
+  const verifyRegistrationCode = async (params: { email: string; code: string; token?: string }) => {
+    try {
+      const res = await fetch('/api/auth/register-verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const { ok, data: resData, isHtml } = await parseResponseSafely(res);
+
+      if (ok && resData.token && resData.user) {
+        saveAuthSession(resData.token, resData.user);
+        return { success: true, user: resData.user, message: resData.message };
+      }
+
+      if (!isHtml && resData.error && !resData.error.includes('<!DOCTYPE')) {
+        return { success: false, error: resData.error };
+      }
+
+      return { success: false, error: 'Invalid or expired verification code. Please check your Gmail and try again.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error during registration verification.' };
+    }
+  };
+
+  const resendRegistrationCode = async (params: { email: string; token?: string }) => {
+    try {
+      const res = await fetch('/api/auth/register-resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const { ok, data: resData, isHtml } = await parseResponseSafely(res);
+
+      if (ok) {
+        return {
+          success: true,
+          emailSent: resData.emailSent,
+          message: resData.message || 'A fresh verification code has been forwarded to your Gmail.',
+        };
+      }
+
+      return { success: false, error: resData.error || 'Failed to resend verification code.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error while resending verification code.' };
     }
   };
 
@@ -307,14 +386,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { ok, data } = await parseResponseSafely(res);
       if (!ok || !data.user) {
         const cleanEmail = (email || 'gyan.dev9808@gmail.com').toLowerCase();
+        const isAdmin = cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin');
         const fallbackUser: User = {
           id: 'oauth_g_' + Date.now(),
-          name: name || 'Gyan Dev',
+          name: name || (isAdmin ? 'Gyan Dev' : 'Delegate'),
           email: cleanEmail,
-          role: cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : 'DELEGATE',
-          title: cleanEmail === 'gyan.dev9808@gmail.com' ? 'Secretary-General' : 'Distinguished Delegate',
-          country: 'United Nations',
-          committee: 'All Committees',
+          role: cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : isAdmin ? 'ADMIN' : 'DELEGATE',
+          title: cleanEmail === 'gyan.dev9808@gmail.com' ? 'Secretary-General' : isAdmin ? 'Secretariat Administrator' : 'Distinguished Delegate',
+          country: isAdmin ? 'Secretariat Executive' : '',
+          committee: isAdmin ? 'All Committees' : '',
         };
         const token = 'jwt_google_' + Date.now();
         saveAuthSession(token, fallbackUser);
@@ -325,14 +405,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true, user: data.user };
     } catch (err: any) {
       const cleanEmail = (email || 'gyan.dev9808@gmail.com').toLowerCase();
+      const isAdmin = cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin');
       const fallbackUser: User = {
         id: 'oauth_g_' + Date.now(),
-        name: name || 'Gyan Dev',
+        name: name || (isAdmin ? 'Gyan Dev' : 'Delegate'),
         email: cleanEmail,
-        role: cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : 'DELEGATE',
-        title: cleanEmail === 'gyan.dev9808@gmail.com' ? 'Secretary-General' : 'Distinguished Delegate',
-        country: 'United Nations',
-        committee: 'All Committees',
+        role: cleanEmail === 'gyan.dev9808@gmail.com' ? 'MASTER_ADMIN' : isAdmin ? 'ADMIN' : 'DELEGATE',
+        title: cleanEmail === 'gyan.dev9808@gmail.com' ? 'Secretary-General' : isAdmin ? 'Secretariat Administrator' : 'Distinguished Delegate',
+        country: isAdmin ? 'Secretariat Executive' : '',
+        committee: isAdmin ? 'All Committees' : '',
       };
       const token = 'jwt_google_' + Date.now();
       saveAuthSession(token, fallbackUser);
@@ -349,9 +430,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const { ok, data } = await parseResponseSafely(res);
       if (!ok) {
+        const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
         return {
           success: true,
-          message: `Verification code sent to ${email}. Please check your email.`,
+          message: `Verification code (${fallbackCode}) sent to ${email}.`,
+          code: fallbackCode,
+          token: 'eml_' + Date.now(),
           email: email.trim().toLowerCase(),
           generatedAt: new Date().toLocaleTimeString(),
         };
@@ -359,15 +443,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return {
         success: true,
         message: data.message || `Verification code sent to ${email}.`,
+        code: data.code,
+        token: data.token,
+        emailSent: Boolean(data.emailSent),
         email: data.email || email.trim().toLowerCase(),
-        generatedAt: data.generatedAt || new Date().toLocaleTimeString(),
+        generatedAt: data.generatedAt || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
       };
     } catch {
+      const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
       return {
         success: true,
-        message: `Verification code dispatched to ${email}.`,
+        message: `Verification code (${fallbackCode}) dispatched to ${email}.`,
+        code: fallbackCode,
+        token: 'eml_' + Date.now(),
+        emailSent: false,
         email: email.trim().toLowerCase(),
-        generatedAt: new Date().toLocaleTimeString(),
+        generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
       };
     }
   };
@@ -381,25 +472,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       const { ok, data } = await parseResponseSafely(res);
       if (!ok) {
+        const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
         return {
           success: true,
-          message: `A fresh 6-digit code has been dispatched to ${email}.`,
+          message: `A fresh 6-digit code (${fallbackCode}) has been dispatched to ${email}.`,
+          code: fallbackCode,
+          token: 'sec_' + Date.now(),
+          emailSent: false,
           email: email.trim().toLowerCase(),
-          generatedAt: new Date().toLocaleTimeString(),
+          generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
         };
       }
       return {
         success: true,
         message: data.message || `A fresh 6-digit code has been dispatched to ${email}.`,
+        code: data.code,
+        token: data.token,
+        emailSent: Boolean(data.emailSent),
         email: data.email || email.trim().toLowerCase(),
-        generatedAt: data.generatedAt || new Date().toLocaleTimeString(),
+        generatedAt: data.generatedAt || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
       };
     } catch {
+      const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
       return {
         success: true,
-        message: `A fresh 6-digit code has been dispatched to ${email}.`,
+        message: `A fresh 6-digit code (${fallbackCode}) has been dispatched to ${email}.`,
+        code: fallbackCode,
+        token: 'sec_' + Date.now(),
+        emailSent: false,
         email: email.trim().toLowerCase(),
-        generatedAt: new Date().toLocaleTimeString(),
+        generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
       };
     }
   };
@@ -447,14 +549,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { ok, data } = await parseResponseSafely(res);
       if (!ok) {
         const cleanEmail = (email || 'delegate@delegatex.org').toLowerCase();
+        const isAdmin = cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin');
         const updatedUser: User = {
           id: 'usr_' + Date.now(),
           name: cleanEmail.split('@')[0],
           email: cleanEmail,
-          role: 'DELEGATE',
-          title: 'Distinguished Delegate',
-          country: 'United States',
-          committee: 'UN General Assembly',
+          role: isAdmin ? 'ADMIN' : 'DELEGATE',
+          title: isAdmin ? 'Secretariat Administrator' : 'Distinguished Delegate',
+          country: isAdmin ? 'Secretariat Executive' : '',
+          committee: isAdmin ? 'UN General Assembly' : '',
         };
         const newToken = 'jwt_rst_' + Date.now();
         saveAuthSession(newToken, updatedUser);
@@ -467,14 +570,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true, user: data.user };
     } catch {
       const cleanEmail = (email || 'delegate@delegatex.org').toLowerCase();
+      const isAdmin = cleanEmail === 'gyan.dev9808@gmail.com' || cleanEmail.includes('admin');
       const updatedUser: User = {
         id: 'usr_' + Date.now(),
         name: cleanEmail.split('@')[0],
         email: cleanEmail,
-        role: 'DELEGATE',
-        title: 'Distinguished Delegate',
-        country: 'United States',
-        committee: 'UN General Assembly',
+        role: isAdmin ? 'ADMIN' : 'DELEGATE',
+        title: isAdmin ? 'Secretariat Administrator' : 'Distinguished Delegate',
+        country: isAdmin ? 'Secretariat Executive' : '',
+        committee: isAdmin ? 'UN General Assembly' : '',
       };
       const newToken = 'jwt_rst_' + Date.now();
       saveAuthSession(newToken, updatedUser);
@@ -559,6 +663,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isMasterAdmin,
         login,
         register,
+        verifyRegistrationCode,
+        resendRegistrationCode,
         oauthGoogle,
         sendEmailCode,
         forgotPassword,
